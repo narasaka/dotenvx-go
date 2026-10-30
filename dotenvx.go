@@ -78,7 +78,8 @@ type Options struct {
 // that KeyFiles, the environment and KeyProvider supply. A value that can't
 // be decrypted stays encrypted, and isn't evaluated or expanded; Parse
 // returns the values together with an error that matches
-// ErrDecryptionFailed and names the keys it couldn't decrypt.
+// ErrDecryptionFailed and names the keys it couldn't decrypt. Decryption
+// isn't constant-time; see Decrypt.
 //
 // Values that aren't single-quoted then have each $(command) replaced
 // with the command's output, unless DisableCommandSubstitution is set.
