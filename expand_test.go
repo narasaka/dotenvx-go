@@ -237,27 +237,53 @@ func TestExpandLongValue(t *testing.T) {
 	}
 }
 
-// Expanding mustn't keep each intermediate value alive until it finishes.
+// Expanding mustn't keep intermediate values, or a copy of a name for each
+// reference, alive until it finishes.
 func TestExpandMemory(t *testing.T) {
-	const refs = 200
-	value := strings.Repeat("x", 1<<20) + strings.Repeat("$K", refs)
-	var heap uint64
-	calls := 0
-	lookup := func(string) (string, bool) {
-		if calls++; calls == refs {
-			runtime.GC()
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
-			heap = m.HeapAlloc
-		}
-		return "1", true
+	const refs = 400
+	long := strings.Repeat("N", 16<<10)
+	tests := []struct {
+		name  string
+		value string
+		vars  map[string]string
+		// limit is well above what the case needs, and well below what it
+		// would keep alive with a copy per substitution (here, 400 MiB or
+		// 6 MiB).
+		limit int64
+	}{
+		{"intermediate values", strings.Repeat("x", 1<<20) + strings.Repeat("$K", refs), map[string]string{"K": "1"}, 16 << 20},
+		// Each ${K} becomes ${NNN…}, a long name that is then looked up.
+		{"long names of unset variables", strings.Repeat("${K}|", refs), map[string]string{"K": "${" + long + "}"}, 2 << 20},
+		{"long names of set variables", strings.Repeat("${K}|", refs), map[string]string{"K": "${" + long + "}", long: "1"}, 2 << 20},
 	}
-	if _, err := expand(value, lookup, nil); err != nil {
-		t.Fatal(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := liveHeap()
+			var during uint64
+			calls := 0
+			lookup := func(name string) (string, bool) {
+				// Measure at the lookup of the last reference.
+				if calls++; calls == 2*refs-1 || tt.name == "intermediate values" && calls == refs {
+					during = liveHeap()
+				}
+				v, ok := tt.vars[name]
+				return v, ok
+			}
+			if _, err := expand(tt.value, lookup, nil); err != nil {
+				t.Fatal(err)
+			}
+			if growth := int64(during) - int64(before); growth > tt.limit {
+				t.Errorf("live heap grew %d KiB during %d substitutions", growth>>10, refs)
+			}
+		})
 	}
-	if heap > 64<<20 {
-		t.Errorf("%d MiB live after %d substitutions into a 1 MiB value", heap>>20, refs)
-	}
+}
+
+func liveHeap() uint64 {
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.HeapAlloc
 }
 
 func BenchmarkExpand(b *testing.B) {
@@ -266,6 +292,7 @@ func BenchmarkExpand(b *testing.B) {
 		{"no references", strings.Repeat("x", 1<<20)},
 		{"many references", strings.Repeat("$A", 8000)},
 		{"many references to dollars", strings.Repeat("${A:-$}", 2000)},
+		{"an unclosed brace before many references", "${" + strings.Repeat("x$A", 5000)},
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()

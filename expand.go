@@ -29,13 +29,9 @@ const (
 	maxExpandedLen = 16 << 20
 )
 
-var (
-	bracedRef = regexp.MustCompile(`^\$\{([^{}]+)\}`)
-	simpleRef = regexp.MustCompile(`^\$([A-Za-z_][A-Za-z0-9_]*)`)
-	// anyRef is what dotenvx looks for in single-quoted values to decide
-	// that expansion must stop once one of them has been substituted.
-	anyRef = regexp.MustCompile(`\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*`)
-)
+// anyRef is what dotenvx looks for in single-quoted values to decide that
+// expansion must stop once one of them has been substituted.
+var anyRef = regexp.MustCompile(`\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*`)
 
 // origins records, for each byte of a value being expanded, which
 // variables' values it came from: the variable whose value it was, then the
@@ -45,6 +41,9 @@ type origins struct {
 	bytes []int32
 	nodes []originNode
 	fill  []int32
+	// names holds one copy of each name, so that nodes neither keep the
+	// values their names were cut from alive nor repeat long names.
+	names map[string]string
 }
 
 type originNode struct {
@@ -54,7 +53,7 @@ type originNode struct {
 }
 
 func newOrigins(n int) *origins {
-	return &origins{bytes: make([]int32, n), nodes: []originNode{{}}}
+	return &origins{bytes: make([]int32, n), nodes: []originNode{{}}, names: map[string]string{}}
 }
 
 // has reports whether the chain starting at node i includes name.
@@ -87,16 +86,19 @@ func (o *origins) common(start, end int) int32 {
 // insert replaces bytes [start:end] with n bytes that came from the value
 // of name, looked up by a reference whose own chain is parent.
 func (o *origins) insert(start, end, n int, name string, parent int32) {
-	// name is part of the value at this step. Copy it, so that the node
-	// doesn't keep that whole value alive.
-	o.nodes = append(o.nodes, originNode{name: strings.Clone(name), parent: parent, depth: o.nodes[parent].depth + 1})
+	if n == 0 {
+		o.bytes = slices.Delete(o.bytes, start, end)
+		return
+	}
+	if _, ok := o.names[name]; !ok {
+		o.names[name] = strings.Clone(name)
+	}
+	o.nodes = append(o.nodes, originNode{name: o.names[name], parent: parent, depth: o.nodes[parent].depth + 1})
 	o.fill = slices.Grow(o.fill[:0], n)[:n]
-	if n > 0 {
-		// Fill by doubling, which copies in bulk rather than byte by byte.
-		o.fill[0] = int32(len(o.nodes) - 1)
-		for filled := 1; filled < n; filled *= 2 {
-			copy(o.fill[filled:], o.fill[:filled])
-		}
+	// Fill by doubling, which copies in bulk rather than byte by byte.
+	o.fill[0] = int32(len(o.nodes) - 1)
+	for filled := 1; filled < n; filled *= 2 {
+		copy(o.fill[filled:], o.fill[:filled])
 	}
 	o.bytes = slices.Replace(o.bytes, start, end, o.fill...)
 }
@@ -177,15 +179,22 @@ func nextRef(s string, from int) (start, end int, ref string) {
 			return 0, 0, ""
 		}
 		i += j
-		if i > 0 && s[i-1] == '\\' || i+1 == len(s) || !startsRef(s[i+1]) {
+		if i > 0 && s[i-1] == '\\' || i+1 == len(s) {
 			continue
 		}
-		m := bracedRef.FindStringSubmatch(s[i:])
-		if m == nil {
-			m = simpleRef.FindStringSubmatch(s[i:])
+		// ${ref}, where ref has no braces, or $NAME.
+		if s[i+1] == '{' {
+			if k := strings.IndexAny(s[i+2:], "{}"); k > 0 && s[i+2+k] == '}' {
+				return i, i + 3 + k, s[i+2 : i+2+k]
+			}
+			continue
 		}
-		if m != nil {
-			return i, i + len(m[0]), m[1]
+		if isNameByte(s[i+1], false) {
+			k := i + 2
+			for k < len(s) && isNameByte(s[k], true) {
+				k++
+			}
+			return i, k, s[i+1 : k]
 		}
 	}
 }
@@ -204,10 +213,10 @@ func resumeFrom(s string, start int) int {
 	return from
 }
 
-// startsRef reports whether c can follow the "$" of a reference: it starts
-// a braced reference or a name.
-func startsRef(c byte) bool {
-	return c == '{' || c == '_' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
+// isNameByte reports whether c can be part of a $NAME: a letter or "_",
+// or also a digit if it isn't the first.
+func isNameByte(c byte, digits bool) bool {
+	return c == '_' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || digits && '0' <= c && c <= '9'
 }
 
 // resolve returns what a reference expands to, given the value of its name
