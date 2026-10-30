@@ -1,6 +1,7 @@
 package dotenvx
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -18,12 +19,14 @@ const maxOutput = 1 << 20
 // minus trailing newlines. Commands run with /bin/sh -c, as Node's execSync
 // runs them, with env as their environment. If any command fails, can't
 // run at all, or writes more than maxOutput bytes, evaluate returns value
-// unchanged, like dotenvx. What commands write to stderr goes to os.Stderr.
+// unchanged, like dotenvx. What commands write to stderr goes to os.Stderr
+// once they are done, as with execSync, whatever happens to it.
 func evaluate(value string, env []string) string {
 	var b strings.Builder
 	last := 0
 	for _, span := range commandSpans(value) {
-		out, ok := run(value[span[0]+2:span[1]-1], env)
+		out, errOut, ok := run(value[span[0]+2:span[1]-1], env)
+		os.Stderr.Write(errOut)
 		if !ok {
 			return value
 		}
@@ -35,16 +38,17 @@ func evaluate(value string, env []string) string {
 	return b.String()
 }
 
-// run runs command and returns what it writes to stdout, or false if it
-// fails, can't run, or writes more than maxOutput bytes to stdout and stderr
-// together.
+// run runs command and returns what it writes to stdout and stderr, and
+// false if it fails, can't run, or writes more than maxOutput bytes to the
+// two together. It doesn't write to os.Stderr itself, so the command never
+// waits on whoever reads that.
 //
 // Like execSync, it waits for children the command leaves running in the
 // background until they close stdout and stderr, unless the output is too
 // long. Then it kills the command and closes both streams at once. That's
 // why it makes the pipes itself, rather than leave them to os/exec, which
 // would wait for them to close.
-func run(command string, env []string) (string, bool) {
+func run(command string, env []string) (out string, errOut []byte, ok bool) {
 	var readers, writers [2]*os.File
 	defer func() {
 		for _, f := range append(readers[:], writers[:]...) {
@@ -56,19 +60,20 @@ func run(command string, env []string) (string, bool) {
 	for i := range readers {
 		var err error
 		if readers[i], writers[i], err = os.Pipe(); err != nil {
-			return "", false
+			return "", nil, false
 		}
 	}
 	cmd := exec.Command("/bin/sh", "-c", command)
 	cmd.Env = env
 	cmd.Stdout, cmd.Stderr = writers[0], writers[1]
 	if err := cmd.Start(); err != nil {
-		return "", false
+		return "", nil, false
 	}
 	budget := &outputBudget{left: maxOutput, cmd: cmd, readers: readers}
-	var out strings.Builder
+	var stdout strings.Builder
+	var stderr bytes.Buffer
 	var copying sync.WaitGroup
-	for i, w := range []io.Writer{&out, os.Stderr} {
+	for i, w := range []io.Writer{&stdout, &stderr} {
 		copying.Add(1)
 		go func() {
 			defer copying.Done()
@@ -81,7 +86,7 @@ func run(command string, env []string) (string, bool) {
 	writers[0].Close()
 	writers[1].Close()
 	copying.Wait()
-	return out.String(), err == nil && !budget.spent
+	return stdout.String(), stderr.Bytes(), err == nil && !budget.spent
 }
 
 // outputBudget is what a command may still write to stdout and stderr,
@@ -95,9 +100,7 @@ type outputBudget struct {
 	readers [2]*os.File
 }
 
-// budgetWriter writes to w what fits in the budget. It ignores w's errors:
-// like execSync, which buffers stderr, it keeps reading the command's
-// output even if forwarding it fails.
+// budgetWriter writes to w, which can't fail, what fits in the budget.
 type budgetWriter struct {
 	budget *outputBudget
 	w      io.Writer
@@ -117,8 +120,7 @@ func (b budgetWriter) Write(p []byte) (int, error) {
 		return 0, errOutputTooLong
 	}
 	b.budget.left -= len(p)
-	b.w.Write(p)
-	return len(p), nil
+	return b.w.Write(p)
 }
 
 var errOutputTooLong = errors.New("command output too long")

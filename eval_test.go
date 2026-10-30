@@ -126,6 +126,40 @@ func TestParseCommandStderrUnwritable(t *testing.T) {
 	}
 }
 
+// Like Node, which buffers what commands write to stderr and writes it out
+// afterwards, run doesn't hold a command up while nothing reads stderr:
+// it leaves forwarding to its caller.
+func TestRunStderrUnread(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	stderr := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = stderr }()
+
+	tests := []struct {
+		command string
+		out     string
+		ok      bool
+	}{
+		{"printf %0200000d 0 >&2; echo hi", "hi\n", true},
+		{"printf %0200000d 0 >&2; printf %01048577d 0", "", false},
+	}
+	for _, tt := range tests {
+		start := time.Now()
+		out, errOut, ok := run(tt.command, nil)
+		if ok != tt.ok || ok && out != tt.out || len(errOut) != 200000 {
+			t.Errorf("run(%q) = %q, %d bytes of stderr, %v", tt.command, out, len(errOut), ok)
+		}
+		if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+			t.Errorf("run(%q) took %v", tt.command, elapsed)
+		}
+	}
+}
+
 func TestParseDisableCommandSubstitution(t *testing.T) {
 	opts := Options{Env: []string{"B=b"}, DisableCommandSubstitution: true}
 	got, err := opts.Parse(strings.NewReader("A=$(echo hi)$B"))
