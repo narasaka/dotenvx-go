@@ -54,13 +54,16 @@ func TestDecryptFixture(t *testing.T) {
 }
 
 // Like Node's Buffer, Decrypt reads base64 with or without padding, in
-// either alphabet, across line breaks.
+// either alphabet, skipping other characters and whatever follows "=".
+// Node decrypts each of these.
 func TestDecryptBase64(t *testing.T) {
 	data := strings.TrimPrefix(testEncrypted, "encrypted:")
 	for _, variant := range []string{
 		strings.TrimRight(data, "="),
 		strings.NewReplacer("+", "-", "/", "_").Replace(data),
 		data[:40] + "\n" + data[40:] + "\r\n",
+		data[:50] + " \t!" + data[50:],
+		data + "ignored",
 	} {
 		if got, err := Decrypt(testPrivateKey, "encrypted:"+variant); err != nil || got != "encrypted" {
 			t.Errorf("Decrypt(%q) = %q, %v", variant, got, err)
@@ -209,4 +212,18 @@ func uncompressedHex(t *testing.T, compressed string) string {
 		t.Fatal(err)
 	}
 	return hex.EncodeToString(key.SerializeUncompressed())
+}
+
+// Each result here is what Node's Buffer.from(s, "base64") gives.
+func TestDecodeBase64(t *testing.T) {
+	tests := map[string]string{
+		"QQ": "41", "QQ==": "41", "Q": "", "QUJD": "414243", "QUJDR": "414243",
+		"_w": "ff", "-w": "fb", "/w": "ff", "+w": "fb",
+		"Q Q=x": "41", "QQ=\nQQ": "41", "!Q@Q#": "41",
+	}
+	for s, want := range tests {
+		if got := hex.EncodeToString(decodeBase64(s)); got != want {
+			t.Errorf("decodeBase64(%q) = %s, want %s", s, got, want)
+		}
+	}
 }

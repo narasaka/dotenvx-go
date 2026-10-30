@@ -51,9 +51,9 @@ func Decrypt(privateKey, value string) (string, error) {
 	if !ok {
 		return "", newError(ErrInvalidPrivateKey, nil)
 	}
-	payload, err := decodeBase64(data)
-	if err != nil || len(payload) < ephemeralKeySize+nonceSize+tagSize || payload[0] != uncompressedPoint {
-		return "", newError(ErrDecryptionFailed, err)
+	payload := decodeBase64(data)
+	if len(payload) < ephemeralKeySize+nonceSize+tagSize || payload[0] != uncompressedPoint {
+		return "", newError(ErrDecryptionFailed, nil)
 	}
 	ephemeral, err := secp256k1.ParsePubKey(payload[:ephemeralKeySize])
 	if err != nil {
@@ -73,12 +73,27 @@ func Decrypt(privateKey, value string) (string, error) {
 	return string(plaintext), nil
 }
 
-// decodeBase64 decodes base64 as Node's Buffer does, with or without
-// padding, in either the standard or the URL-safe alphabet, and ignoring
-// line breaks.
-func decodeBase64(s string) ([]byte, error) {
-	s = strings.TrimRight(strings.NewReplacer("-", "+", "_", "/", "\r", "", "\n", "").Replace(s), "=")
-	return base64.RawStdEncoding.DecodeString(s)
+// decodeBase64 decodes base64 as Node's Buffer does: it reads both the
+// standard and the URL-safe alphabet, skips any other characters, stops at
+// the first "=", and drops a final character that makes no whole byte.
+func decodeBase64(s string) []byte {
+	var b []byte
+	for i := 0; i < len(s) && s[i] != '='; i++ {
+		switch c := s[i]; {
+		case c == '-':
+			b = append(b, '+')
+		case c == '_':
+			b = append(b, '/')
+		case 'A' <= c && c <= 'Z', 'a' <= c && c <= 'z', '0' <= c && c <= '9', c == '+', c == '/':
+			b = append(b, c)
+		}
+	}
+	if len(b)%4 == 1 {
+		b = b[:len(b)-1]
+	}
+	// What is left is valid unpadded base64, which always decodes.
+	out, _ := base64.RawStdEncoding.DecodeString(string(b))
+	return out
 }
 
 // Encrypt encrypts value for publicKey, a secp256k1 public key in hex,
