@@ -47,10 +47,12 @@ func isEncrypted(value string) bool {
 // UTF-16 code units. And it returns plaintext that isn't valid UTF-8 as it
 // is, where dotenvx gives U+FFFD.
 //
-// Decrypt isn't constant-time: how long it takes depends slightly on the
-// private key, which someone who can time many calls could use to work out
-// the key. That doesn't matter for decrypting your own files, but don't
-// call it on values that others can send to a long-running program.
+// Unlike dotenvx, Decrypt isn't constant-time: the steps it takes depend on
+// the private key, so another process that can watch it run on the same
+// machine, by timing it or through the CPU's caches, could learn the key.
+// That doesn't matter where nothing untrusted shares the machine. The same
+// goes for Encrypt, PublicKey and GenerateKeypair, and for Parse and Load,
+// which decrypt with Decrypt.
 func Decrypt(privateKey, value string) (string, error) {
 	data, ok := strings.CutPrefix(value, encryptedPrefix)
 	if !ok {
