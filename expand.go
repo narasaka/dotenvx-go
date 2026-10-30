@@ -87,7 +87,9 @@ func (o *origins) common(start, end int) int32 {
 // insert replaces bytes [start:end] with n bytes that came from the value
 // of name, looked up by a reference whose own chain is parent.
 func (o *origins) insert(start, end, n int, name string, parent int32) {
-	o.nodes = append(o.nodes, originNode{name: name, parent: parent, depth: o.nodes[parent].depth + 1})
+	// name is part of the value at this step. Copy it, so that the node
+	// doesn't keep that whole value alive.
+	o.nodes = append(o.nodes, originNode{name: strings.Clone(name), parent: parent, depth: o.nodes[parent].depth + 1})
 	o.fill = slices.Grow(o.fill[:0], n)[:n]
 	if n > 0 {
 		// Fill by doubling, which copies in bulk rather than byte by byte.
@@ -122,15 +124,15 @@ func (o *origins) keep(start, end, n int) {
 func expand(value string, lookup func(string) (string, bool), literals map[string]string) (string, error) {
 	// o stays nil while all of value came from the source.
 	var o *origins
-	for insertions := 0; ; {
-		start, end, ref := nextRef(value)
+	for from, insertions := 0, 0; ; {
+		start, end, ref := nextRef(value, from)
 		if ref == "" {
 			return value, nil
 		}
 		name, op, alt := splitOperator(ref)
 		v, ok := lookup(name)
 		replacement, isValue := resolve(op, alt, v, ok)
-		if len(value)-(end-start)+len(replacement) > maxExpandedLen {
+		if len(replacement) > end-start && len(value)-(end-start)+len(replacement) > maxExpandedLen {
 			return value, ErrExpansionLimit
 		}
 		next := value[:start] + replacement + value[end:]
@@ -161,14 +163,15 @@ func expand(value string, lookup func(string) (string, bool), literals map[strin
 			o.keep(start, end, len(replacement))
 		}
 		value = next
+		from = resumeFrom(value, start)
 	}
 }
 
-// nextRef finds the first reference in s whose "$" isn't escaped with a
-// backslash. It returns where the reference is and what is inside it: the
-// name, plus the operator and alternative if it is braced.
-func nextRef(s string) (start, end int, ref string) {
-	for i := 0; ; i++ {
+// nextRef finds the first reference in s[from:] whose "$" isn't escaped
+// with a backslash. It returns where the reference is and what is inside
+// it: the name, plus the operator and alternative if it is braced.
+func nextRef(s string, from int) (start, end int, ref string) {
+	for i := from; ; i++ {
 		j := strings.IndexByte(s[i:], '$')
 		if j < 0 {
 			return 0, 0, ""
@@ -185,6 +188,20 @@ func nextRef(s string) (start, end int, ref string) {
 			return i, i + len(m[0]), m[1]
 		}
 	}
+}
+
+// resumeFrom returns where to look for the next reference in s after a
+// substitution at start. dotenvx searches from the beginning every time,
+// but nothing before start was a reference, and only two kinds of
+// reference can start there now, by running into the new text: a "$" just
+// before start, and a "${" whose name hasn't been closed by start. A $NAME
+// further back would have been a reference already.
+func resumeFrom(s string, start int) int {
+	from := max(start-1, 0)
+	if open := strings.LastIndex(s[:start], "${"); open >= 0 && !strings.ContainsAny(s[open+2:start], "{}") {
+		from = min(from, open)
+	}
+	return from
 }
 
 // startsRef reports whether c can follow the "$" of a reference: it starts

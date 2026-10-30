@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -195,6 +196,67 @@ func TestParseExpansionLimit(t *testing.T) {
 				t.Errorf("Parse error = %v, want ErrExpansionLimit", err)
 			}
 		})
+	}
+}
+
+func TestParseExpansionLimitBoundaries(t *testing.T) {
+	dollars := "A=" + strings.Repeat("$B|", maxInsertions)
+	exact := strings.Repeat("x", maxExpandedLen-1)
+	tests := []struct {
+		name    string
+		env     []string
+		src     string
+		want    string
+		wantErr bool
+	}{
+		// B contains "$", so each substitution of it counts.
+		{"as many substitutions as allowed", []string{"B=$"}, dollars, strings.Repeat("$|", maxInsertions), false},
+		{"one substitution more", []string{"B=$"}, dollars + "$B", strings.Repeat("$|", maxInsertions) + "$B", true},
+		{"as long as allowed", []string{"B=" + exact}, "A=y$B", "y" + exact, false},
+		{"one byte longer", []string{"B=x" + exact}, "A=y$B", "y$B", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Options{Env: append([]string{}, tt.env...)}.Parse(strings.NewReader(tt.src))
+			if errors.Is(err, ErrExpansionLimit) != tt.wantErr {
+				t.Errorf("Parse error = %v, want ErrExpansionLimit: %v", err, tt.wantErr)
+			}
+			if got["A"] != tt.want {
+				t.Errorf("A has %d bytes, want %d", len(got["A"]), len(tt.want))
+			}
+		})
+	}
+}
+
+// Substitutions that don't grow a value are fine, however long it is.
+func TestExpandLongValue(t *testing.T) {
+	long := strings.Repeat("x", maxExpandedLen+1)
+	got, err := expand(long+"$U", func(string) (string, bool) { return "", false }, nil)
+	if err != nil || got != long {
+		t.Errorf("expand = %d bytes, %v; want %d bytes, no error", len(got), err, len(long))
+	}
+}
+
+// Expanding mustn't keep each intermediate value alive until it finishes.
+func TestExpandMemory(t *testing.T) {
+	const refs = 200
+	value := strings.Repeat("x", 1<<20) + strings.Repeat("$K", refs)
+	var heap uint64
+	calls := 0
+	lookup := func(string) (string, bool) {
+		if calls++; calls == refs {
+			runtime.GC()
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			heap = m.HeapAlloc
+		}
+		return "1", true
+	}
+	if _, err := expand(value, lookup, nil); err != nil {
+		t.Fatal(err)
+	}
+	if heap > 64<<20 {
+		t.Errorf("%d MiB live after %d substitutions into a 1 MiB value", heap>>20, refs)
 	}
 }
 
