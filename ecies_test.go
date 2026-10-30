@@ -225,6 +225,8 @@ func TestDecodeBase64(t *testing.T) {
 		"Q Q=x": "41", "QQ=\nQQ": "41", "!Q@Q#": "41", "QéQ": "41",
 		// Node gives 40, reading Ł (U+0141) as A.
 		"Q\u0141": "",
+		// Node gives 41, stopping at the high surrogate of 😀. Both skip 🌍.
+		"QQ\U0001F600QQ": "410410", "QQ\U0001F30DQQ": "410410",
 	}
 	for s, want := range tests {
 		if got := hex.EncodeToString(decodeBase64(s)); got != want {

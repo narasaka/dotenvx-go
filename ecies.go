@@ -79,8 +79,9 @@ func Decrypt(privateKey, value string) (string, error) {
 // standard and the URL-safe alphabet, skips any other characters, stops at
 // the first "=", and drops a final character that makes no whole byte.
 // Characters outside ASCII are skipped too. Node instead reads each UTF-16
-// code unit by its low byte, so it takes Ł (U+0141) for A and stops at the
-// first half of an emoji.
+// code unit by its low byte, so it takes Ł (U+0141) for A, and stops at the
+// first half of some emoji, such as 😀 (U+1F600), whose high surrogate D83D
+// has the low byte "=".
 func decodeBase64(s string) []byte {
 	var b []byte
 	for i := 0; i < len(s) && s[i] != '='; i++ {
