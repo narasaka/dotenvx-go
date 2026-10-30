@@ -75,7 +75,8 @@ without a terminal it uses `.env.keys` without asking). Choose the
 `.env.keys` file and keep it out of version control: this library doesn't
 read key stores, so a key kept in one has to be exported and set as
 `DOTENV_PRIVATE_KEY`, or fetched through `Options.KeyProvider`. Enclaved
-dotenvx Armor keys never leave Armor, so this library can't use them.
+dotenvx Armor keys never leave their remote enclave, so this library can't use
+them.
 
 `Load` finds `.env.keys` next to each file, except that, as in dotenvx, it
 reads `.env.keys` in the current directory when the file's own key variable
