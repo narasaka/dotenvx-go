@@ -216,12 +216,15 @@ func uncompressedHex(t *testing.T, compressed string) string {
 	return hex.EncodeToString(key.SerializeUncompressed())
 }
 
-// Each result here is what Node's Buffer.from(s, "base64") gives.
+// Each result here is what Node's Buffer.from(s, "base64") gives, except
+// for the documented deviation at the end.
 func TestDecodeBase64(t *testing.T) {
 	tests := map[string]string{
 		"QQ": "41", "QQ==": "41", "Q": "", "QUJD": "414243", "QUJDR": "414243",
 		"_w": "ff", "-w": "fb", "/w": "ff", "+w": "fb",
-		"Q Q=x": "41", "QQ=\nQQ": "41", "!Q@Q#": "41",
+		"Q Q=x": "41", "QQ=\nQQ": "41", "!Q@Q#": "41", "QéQ": "41",
+		// Node gives 40, reading Ł (U+0141) as A.
+		"Q\u0141": "",
 	}
 	for s, want := range tests {
 		if got := hex.EncodeToString(decodeBase64(s)); got != want {

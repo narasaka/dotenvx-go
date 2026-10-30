@@ -37,8 +37,10 @@ const (
 // ErrWrongPrivateKey (when the value was encrypted for another key) and
 // ErrDecryptionFailed (when it isn't a valid encrypted value), as dotenvx's
 // do. Unlike dotenvx, it parses the private key strictly as 64 hex digits:
-// Node reads hex up to the first character that isn't. And it returns
-// plaintext that isn't valid UTF-8 as it is, where dotenvx gives U+FFFD.
+// Node reads hex up to the first character that isn't. It skips characters
+// outside ASCII in the base64, which Node reads by the low byte of their
+// UTF-16 code units. And it returns plaintext that isn't valid UTF-8 as it
+// is, where dotenvx gives U+FFFD.
 func Decrypt(privateKey, value string) (string, error) {
 	data, ok := strings.CutPrefix(value, encryptedPrefix)
 	if !ok {
@@ -76,6 +78,9 @@ func Decrypt(privateKey, value string) (string, error) {
 // decodeBase64 decodes base64 as Node's Buffer does: it reads both the
 // standard and the URL-safe alphabet, skips any other characters, stops at
 // the first "=", and drops a final character that makes no whole byte.
+// Characters outside ASCII are skipped too. Node instead reads each UTF-16
+// code unit by its low byte, so it takes Ł (U+0141) for A and stops at the
+// first half of an emoji.
 func decodeBase64(s string) []byte {
 	var b []byte
 	for i := 0; i < len(s) && s[i] != '='; i++ {
