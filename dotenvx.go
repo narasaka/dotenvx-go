@@ -54,6 +54,9 @@ type Options struct {
 	//
 	// Private keys also come from the DOTENV_PRIVATE_KEY* variables of the
 	// existing environment, each holding a single key, and always count.
+	// Keys must be exactly 64 hex digits: a value with anything else in it,
+	// such as a comma-separated list or trailing whitespace, is ignored,
+	// where dotenvx would use the hex it starts with.
 	KeyFiles []string
 
 	// KeyProvider, if set, is asked for the private key of each public key

@@ -18,9 +18,9 @@ import (
 // named by DOTENV_FILE, DOTENV_PATH or DOTENV_F, the first that isn't
 // empty; or else, if DOTENV_PRIVATE_KEY* variables are set, the files they
 // stand for, in the environment's order (.env.production for
-// DOTENV_PRIVATE_KEY_PRODUCTION); or else ".env". It looks for those in the existing environment
-// only: with Env set, that is Env, where dotenvx would also check the
-// process environment.
+// DOTENV_PRIVATE_KEY_PRODUCTION); or else ".env". It looks for those in
+// the existing environment only: with Env set, that is Env, where dotenvx
+// would also check the process environment.
 //
 // Files are read in order, and each one sees the values set by the files
 // before it as existing values. So unless Overload is set, the first file to

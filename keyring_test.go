@@ -253,6 +253,9 @@ func TestParseKeyIsolation(t *testing.T) {
 		{"declared, a list of keys", declared, Options{Env: []string{}, KeyFiles: []string{comma}}, prod, true},
 		// Keys in the environment always count.
 		{"declared, the key in the environment", declared, Options{Env: []string{"DOTENV_PRIVATE_KEY_PRODUCTION=" + prodKey}, KeyFiles: []string{both}}, "prod-secret", false},
+		// A key file also supplies the key of a public key in the
+		// environment.
+		{"declared, the public key in the environment", declared, Options{Env: []string{"DOTENV_PUBLIC_KEY_P=" + prodPub}, KeyFiles: []string{both}}, "prod-secret", false},
 		// Without a declared public key, every key counts.
 		{"undeclared", undeclared, Options{Env: []string{}, KeyFiles: []string{both}}, "prod-secret", false},
 		// When the provider fails, every key counts, and its error comes
