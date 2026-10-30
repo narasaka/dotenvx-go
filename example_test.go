@@ -10,8 +10,8 @@ import (
 func ExampleOptions_Parse() {
 	src := `# comments and blank lines are skipped
 HELLO=World
-GREETING="Hello,
-multiline"
+GREETING="Hello, ${HELLO}
+on two lines"
 EXISTING=from the file
 `
 	opts := dotenvx.Options{Env: []string{"EXISTING=from the environment"}}
@@ -29,8 +29,8 @@ EXISTING=from the file
 	fmt.Println(values["EXISTING"])
 	// Output:
 	// World
-	// Hello,
-	// multiline
+	// Hello, World
+	// on two lines
 	// from the environment
 	// from the file
 }

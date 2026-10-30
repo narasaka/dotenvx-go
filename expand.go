@@ -1,15 +1,13 @@
 package dotenvx
 
 import (
+	"errors"
 	"regexp"
-	"strings"
 )
 
-// maxReexpansions caps how many times expanding one value may substitute
-// text that itself contains a "$". Only those substitutions can repeat
-// forever, as in A=$B with B=x$B. Every other one removes at least one "$",
-// so a value with any number of plain references still expands fully.
-const maxReexpansions = 100
+// ErrReferenceCycle is reported, wrapped, when a value can't be expanded
+// because a variable refers back to itself, as in A=$B with B=x$B.
+var ErrReferenceCycle = errors.New("reference cycle")
 
 var (
 	bracedRef = regexp.MustCompile(`^\$\{([^{}]+)\}`)
@@ -19,27 +17,64 @@ var (
 	anyRef = regexp.MustCompile(`\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*`)
 )
 
+// origin records which variables' values a piece of text came from: the
+// variable whose value it was, then the one whose value contained the
+// reference to that, and so on. Text written in the source has a nil origin.
+type origin struct {
+	name   string
+	parent *origin
+}
+
+func (o *origin) has(name string) bool {
+	for ; o != nil; o = o.parent {
+		if o.name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // expand replaces $NAME, ${NAME} and ${NAME<op>alt} references in value,
 // innermost first, the way dotenvx does. lookup resolves names. literals
 // holds the values of keys that were assigned single-quoted values.
-func expand(value string, lookup func(string) (string, bool), literals map[string]string) string {
-	for reexpansions := 0; ; {
+//
+// dotenvx loops forever when a variable's value leads back to a reference
+// to the same variable. expand tracks where each byte of the value came
+// from, and returns ErrReferenceCycle instead of inserting a variable's
+// value into text that came from that same value.
+func expand(value string, lookup func(string) (string, bool), literals map[string]string) (string, error) {
+	origins := make([]*origin, len(value))
+	for {
 		start, end, ref := nextRef(value)
 		if ref == "" {
-			return value
+			return value, nil
 		}
-		name, replacement := resolve(ref, lookup)
+		name, op, alt := splitOperator(ref)
+		v, ok := lookup(name)
+		replacement, isValue := resolve(op, alt, v, ok)
+		var inserted []*origin
+		if isValue {
+			parent := origins[start]
+			if parent.has(name) {
+				return value, ErrReferenceCycle
+			}
+			o := &origin{name: name, parent: parent}
+			inserted = make([]*origin, len(replacement))
+			for i := range inserted {
+				inserted[i] = o
+			}
+		} else {
+			// The alternative is the end of the braced reference, before its
+			// closing brace, and keeps the origin it had there.
+			inserted = origins[end-1-len(replacement) : end-1]
+		}
 		value = value[:start] + replacement + value[end:]
+		origins = append(append(append(make([]*origin, 0, len(value)), origins[:start]...), inserted...), origins[end:]...)
 		if v, ok := lookup(name); ok && v == value {
-			return value
+			return value, nil
 		}
 		if anyRef.MatchString(literals[name]) {
-			return value
-		}
-		if strings.Contains(replacement, "$") {
-			if reexpansions++; reexpansions == maxReexpansions {
-				return value
-			}
+			return value, nil
 		}
 	}
 }
@@ -63,29 +98,31 @@ func nextRef(s string) (start, end int, ref string) {
 	return 0, 0, ""
 }
 
-// resolve returns the name a reference looks up and what it expands to.
-func resolve(ref string, lookup func(string) (string, bool)) (name, replacement string) {
-	name, op, alt := splitOperator(ref)
-	v, ok := lookup(name)
+// resolve returns what a reference expands to, given the value of its name
+// and whether the name is set. isValue reports whether that is the value,
+// rather than the alternative or nothing.
+func resolve(op, alt, v string, ok bool) (replacement string, isValue bool) {
 	switch op {
 	case ":-":
 		if v == "" {
-			v = alt
+			return alt, false
 		}
 	case "-":
 		if !ok {
-			v = alt
+			return alt, false
 		}
 	case ":+":
 		if v != "" {
-			v = alt
+			return alt, false
 		}
+		return "", false
 	case "+":
 		if ok {
-			v = alt
+			return alt, false
 		}
+		return "", false
 	}
-	return name, v
+	return v, true
 }
 
 // splitOperator splits a reference at its first ":-", "-", ":+" or "+".

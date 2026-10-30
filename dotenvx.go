@@ -1,6 +1,7 @@
 package dotenvx
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,22 @@ type Options struct {
 // Parse reads dotenv source from r and returns its values. It doesn't modify
 // the process environment. When a key is assigned more than once, the last
 // assignment wins.
+//
+// Values that aren't single-quoted have their $NAME and ${NAME} references
+// expanded, as do ${NAME:-default}, ${NAME-default}, ${NAME:+alternative}
+// and ${NAME+alternative}, the way dotenvx expands them. Names resolve to
+// existing values first, then to values parsed earlier, or the other way
+// round with Overload. A backslash keeps a "$" from starting a reference.
+// Existing values that aren't empty are used as they are, unexpanded.
+//
+// Expansion differs from dotenvx where dotenvx relies on accidents of
+// JavaScript: a value is inserted as it is, even if it contains "$$" or
+// "$&"; the reference that matched is the one replaced, even if an escaped
+// copy of it comes first; and names containing "null", or naming properties
+// of Object.prototype, resolve like any other. Where dotenvx would loop
+// forever, because a variable refers back to itself, Parse leaves the
+// rest of that value unexpanded and returns its values with an error that
+// wraps ErrReferenceCycle.
 //
 // The source is read as UTF-8. Bytes that aren't valid UTF-8 are kept as
 // they are, where dotenvx, which only sees decoded text, would have replaced
@@ -54,6 +71,7 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 		v, ok := second[name]
 		return v, ok
 	}
+	var errs []error
 	for _, a := range scan(string(src)) {
 		value := a.value
 		if v, ok := existing[a.key]; ok && !o.Overload {
@@ -61,14 +79,18 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 		}
 		// Existing values are taken as they are, unless they are empty.
 		if a.quote != '\'' && (existing[a.key] == "" || o.Overload) {
-			value = strings.ReplaceAll(expand(value, lookup, literals), `\$`, "$")
+			expanded, err := expand(value, lookup, literals)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("dotenvx: expanding %s: %w", a.key, err))
+			}
+			value = strings.ReplaceAll(expanded, `\$`, "$")
 		}
 		if a.quote == '\'' {
 			literals[a.key] = value
 		}
 		parsed[a.key] = value
 	}
-	return parsed, nil
+	return parsed, errors.Join(errs...)
 }
 
 // Parse reads dotenv source from r with the default Options.
