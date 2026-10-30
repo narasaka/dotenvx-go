@@ -22,32 +22,76 @@ func evaluate(value string, env []string) string {
 	var b strings.Builder
 	last := 0
 	for _, span := range commandSpans(value) {
-		cmd := exec.Command("/bin/sh", "-c", value[span[0]+2:span[1]-1])
-		cmd.Env = env
-		budget := &outputBudget{cmd: cmd, left: maxOutput}
-		var out strings.Builder
-		cmd.Stdout = budgetWriter{budget, &out}
-		// Like execSync, let the user see what the command reports.
-		cmd.Stderr = budgetWriter{budget, os.Stderr}
-		if err := cmd.Run(); err != nil {
+		out, ok := run(value[span[0]+2:span[1]-1], env)
+		if !ok {
 			return value
 		}
 		b.WriteString(value[last:span[0]])
-		b.WriteString(strings.TrimRight(out.String(), "\r\n"))
+		b.WriteString(strings.TrimRight(out, "\r\n"))
 		last = span[1]
 	}
 	b.WriteString(value[last:])
 	return b.String()
 }
 
-var errOutputTooLong = errors.New("command output too long")
+// run runs command and returns what it writes to stdout, or false if it
+// fails, can't run, or writes more than maxOutput bytes to stdout and stderr
+// together.
+//
+// Like execSync, it waits for children the command leaves running in the
+// background until they close stdout and stderr, unless the output is too
+// long. Then it kills the command and closes both streams at once. That's
+// why it makes the pipes itself, rather than leave them to os/exec, which
+// would wait for them to close.
+func run(command string, env []string) (string, bool) {
+	var readers, writers [2]*os.File
+	defer func() {
+		for _, f := range append(readers[:], writers[:]...) {
+			if f != nil {
+				f.Close()
+			}
+		}
+	}()
+	for i := range readers {
+		var err error
+		if readers[i], writers[i], err = os.Pipe(); err != nil {
+			return "", false
+		}
+	}
+	cmd := exec.Command("/bin/sh", "-c", command)
+	cmd.Env = env
+	cmd.Stdout, cmd.Stderr = writers[0], writers[1]
+	if err := cmd.Start(); err != nil {
+		return "", false
+	}
+	budget := &outputBudget{left: maxOutput, cmd: cmd, readers: readers}
+	var out strings.Builder
+	var copying sync.WaitGroup
+	for i, w := range []io.Writer{&out, os.Stderr} {
+		copying.Add(1)
+		go func() {
+			defer copying.Done()
+			io.Copy(budgetWriter{budget, w}, readers[i])
+		}()
+	}
+	err := cmd.Wait()
+	// The streams end once the command, and any children holding them, are
+	// done with them.
+	writers[0].Close()
+	writers[1].Close()
+	copying.Wait()
+	return out.String(), err == nil && !budget.spent
+}
 
 // outputBudget is what a command may still write to stdout and stderr,
-// which are copied concurrently. Overspending it kills the command.
+// which are copied concurrently. Overspending it kills the command and
+// closes both streams.
 type outputBudget struct {
-	mu   sync.Mutex
-	left int
-	cmd  *exec.Cmd
+	mu      sync.Mutex
+	left    int
+	spent   bool
+	cmd     *exec.Cmd
+	readers [2]*os.File
 }
 
 // budgetWriter writes to w what fits in the budget.
@@ -59,13 +103,20 @@ type budgetWriter struct {
 func (b budgetWriter) Write(p []byte) (int, error) {
 	b.budget.mu.Lock()
 	defer b.budget.mu.Unlock()
-	if len(p) > b.budget.left {
-		b.budget.cmd.Process.Kill()
+	if b.budget.spent || len(p) > b.budget.left {
+		if !b.budget.spent {
+			b.budget.spent = true
+			b.budget.cmd.Process.Kill()
+			b.budget.readers[0].Close()
+			b.budget.readers[1].Close()
+		}
 		return 0, errOutputTooLong
 	}
 	b.budget.left -= len(p)
 	return b.w.Write(p)
 }
+
+var errOutputTooLong = errors.New("command output too long")
 
 // commandSpans returns the start and end of each $(command) in s.
 func commandSpans(s string) [][2]int {

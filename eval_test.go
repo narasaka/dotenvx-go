@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Every case here was checked against @dotenvx/primitives 4.3.0.
@@ -82,12 +83,22 @@ func TestParseCommandOutputLimit(t *testing.T) {
 		{"1 MiB with stderr", "A=$(printf hi; printf %01048574d 0 >&2)", "hi"},
 		{"more with stderr", "A=$(printf hi; printf %01048575d 0 >&2)", "$(printf hi; printf %01048575d 0 >&2)"},
 		{"more on stderr alone", "A=$(printf %01048577d 0 >&2)", "$(printf %01048577d 0 >&2)"},
+		// Like Node, give up at once, without waiting for a child that
+		// still holds the other stream open.
+		{"more with a child holding stderr", "A=$(sleep 5 & printf %01048577d 0)", "$(sleep 5 & printf %01048577d 0)"},
+		{"more on stderr with a child holding stdout", "A=$(sleep 5 & printf %01048577d 0 >&2)", "$(sleep 5 & printf %01048577d 0 >&2)"},
+		{"more from a background child", "A=$( (printf %01048577d 0; sleep 5) & echo now)", "$( (printf %01048577d 0; sleep 5) & echo now)"},
+		{"more on stderr from a background child", "A=$( (printf %01048577d 0 >&2; sleep 5) & echo now)", "$( (printf %01048577d 0 >&2; sleep 5) & echo now)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			start := time.Now()
 			got, err := Options{Env: []string{}}.Parse(strings.NewReader(tt.src))
 			if err != nil || got["A"] != tt.want {
 				t.Errorf("A has %d bytes, error %v; want %d bytes", len(got["A"]), err, len(tt.want))
+			}
+			if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+				t.Errorf("took %v", elapsed)
 			}
 		})
 	}
