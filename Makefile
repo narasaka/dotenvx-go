@@ -3,11 +3,11 @@
 STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
-.PHONY: check lint fmt tidy vet staticcheck govulncheck bench test cover
+.PHONY: check lint fmt tidy vet staticcheck govulncheck lint-bench test cover
 
 check: lint cover
 
-lint: fmt tidy vet staticcheck govulncheck bench
+lint: fmt tidy vet staticcheck govulncheck lint-bench
 
 fmt:
 	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
@@ -26,7 +26,7 @@ govulncheck:
 
 # bench/ is its own module, so the checks above skip it. Its server builds
 # with and without the dotenvxgo tag, so both builds are checked.
-bench:
+lint-bench:
 	cd bench && go mod tidy -diff
 	cd bench && go vet ./... && go vet -tags dotenvxgo ./...
 	cd bench && go run $(STATICCHECK) ./... && go run $(STATICCHECK) -tags dotenvxgo ./...

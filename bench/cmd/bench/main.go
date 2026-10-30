@@ -8,6 +8,9 @@
 //     the JSON;
 //   - lib: the server decrypts the file itself with dotenvx-go.
 //
+// A fifth setup, linked, starts the lib build with plaintext variables, which
+// shows what linking dotenvx-go costs apart from loading a file.
+//
 // For each env file in env/ and each way, it starts the dummy server in app/
 // several times, and reports how long it took until /health answered and the
 // memory (PSS) of every process involved once it was serving. It runs on
@@ -18,14 +21,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -38,11 +44,13 @@ import (
 
 // Run is one start of the server.
 type Run struct {
-	ReadyMs   float64          `json:"readyMs"`
-	PSSKiB    map[string]int   `json:"pssKiB"` // by process name
-	Processes int              `json:"processes"`
-	Total     int              `json:"totalPssKiB"`
-	byPID     map[int]struct{} // processes seen
+	ReadyMs   float64        `json:"readyMs"`
+	PSSKiB    map[string]int `json:"pssKiB"` // by process name
+	Processes int            `json:"processes"`
+	Total     int            `json:"totalPssKiB"`
+	// Anon is the anonymous part of Total. The rest is file-backed, mostly
+	// the executables, which processes mapping the same file share.
+	Anon int `json:"anonPssKiB"`
 }
 
 // Result is every run of one setup with one env file.
@@ -59,13 +67,21 @@ func main() {
 	settle := flag.Duration("settle", time.Second, "wait after /health answers before measuring memory")
 	jsonOut := flag.String("json", "", "also write the results as JSON to this file")
 	flag.Parse()
-	if err := run(*dotenvxBin, *runs, *settle, *jsonOut); err != nil {
+	if *runs < 1 {
+		fmt.Fprintln(os.Stderr, "bench: -runs must be at least 1")
+		os.Exit(2)
+	}
+	// Ctrl-C stops the server being measured, which runs in its own process
+	// group and so doesn't get the terminal's signal, and lets cleanup run.
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	if err := run(ctx, *dotenvxBin, *runs, *settle, *jsonOut); err != nil {
 		fmt.Fprintln(os.Stderr, "bench:", err)
 		os.Exit(1)
 	}
 }
 
-func run(dotenvxBin string, runs int, settle time.Duration, jsonOut string) error {
+func run(ctx context.Context, dotenvxBin string, runs int, settle time.Duration, jsonOut string) error {
 	if _, err := os.Stat("/proc/self/smaps_rollup"); err != nil {
 		return errors.New("needs Linux's /proc/<pid>/smaps_rollup")
 	}
@@ -73,11 +89,11 @@ func run(dotenvxBin string, runs int, settle time.Duration, jsonOut string) erro
 	if err != nil {
 		return err
 	}
-	if out, err := exec.Command(dotenvxBin, "--version").Output(); err != nil {
+	version, err := exec.Command(dotenvxBin, "--version").Output()
+	if err != nil {
 		return fmt.Errorf("%s: %w (run sh install-dotenvx.sh)", dotenvxBin, err)
-	} else {
-		fmt.Printf("dotenvx %s", out)
 	}
+	fmt.Printf("dotenvx %s", version)
 
 	tmp, err := os.MkdirTemp("", "dotenvx-bench")
 	if err != nil {
@@ -125,6 +141,7 @@ func run(dotenvxBin string, runs int, settle time.Duration, jsonOut string) erro
 			env  []string
 		}{
 			{"plain", []string{app}, plain},
+			{"linked", []string{appLib}, plain},
 			{"run", []string{dotenvxBin, "run", "--strict", "-f", file, "--", app}, []string{key}},
 			{"get", []string{"/bin/sh", "-c", `DOTENVX_ENV_JSON=$("$0" get --strict -f "$1") && export DOTENVX_ENV_JSON && exec "$2"`, dotenvxBin, file, app}, []string{key}},
 			{"lib", []string{appLib}, []string{key, "BENCH_ENV_FILE=" + file}},
@@ -132,7 +149,7 @@ func run(dotenvxBin string, runs int, settle time.Duration, jsonOut string) erro
 		for _, s := range setups {
 			r := Result{File: filepath.Base(file), Setup: s.name, Keys: expect}
 			for range runs {
-				one, err := start(s.argv, append(slices.Clone(base), s.env...), settle)
+				one, err := start(ctx, s.argv, append(slices.Clone(base), s.env...), settle)
 				if err != nil {
 					return fmt.Errorf("%s with %s: %w", s.name, file, err)
 				}
@@ -155,7 +172,7 @@ func run(dotenvxBin string, runs int, settle time.Duration, jsonOut string) erro
 
 // start runs argv in its own process group until /health answers, measures
 // it and stops it.
-func start(argv, env []string, settle time.Duration) (Run, error) {
+func start(ctx context.Context, argv, env []string, settle time.Duration) (Run, error) {
 	port, err := freePort()
 	if err != nil {
 		return Run{}, err
@@ -188,7 +205,12 @@ func start(argv, env []string, settle time.Duration) (Run, error) {
 	for {
 		select {
 		case err := <-exited:
+			// Its own process may be gone while a child it started lives on.
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			return Run{}, fmt.Errorf("exited before serving (%v): %s", err, strings.TrimSpace(stderr.String()))
+		case <-ctx.Done():
+			stop()
+			return Run{}, ctx.Err()
 		default:
 		}
 		if resp, err := client.Get(url); err == nil {
@@ -203,9 +225,14 @@ func start(argv, env []string, settle time.Duration) (Run, error) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	r := Run{ReadyMs: float64(time.Since(begin).Microseconds()) / 1000, PSSKiB: map[string]int{}, byPID: map[int]struct{}{}}
+	r := Run{ReadyMs: float64(time.Since(begin).Microseconds()) / 1000, PSSKiB: map[string]int{}}
 
-	time.Sleep(settle)
+	select {
+	case <-time.After(settle):
+	case <-ctx.Done():
+		stop()
+		return Run{}, ctx.Err()
+	}
 	if err := measure(cmd.Process.Pid, &r); err != nil {
 		stop()
 		return Run{}, err
@@ -221,8 +248,7 @@ func measure(pgid int, r *Run) error {
 		return err
 	}
 	for _, e := range entries {
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil {
+		if _, err := strconv.Atoi(e.Name()); err != nil {
 			continue
 		}
 		stat, err := os.ReadFile(filepath.Join("/proc", e.Name(), "stat"))
@@ -244,15 +270,21 @@ func measure(pgid int, r *Run) error {
 			name = "app"
 		}
 		for line := range strings.SplitSeq(string(rollup), "\n") {
-			if rest, ok := strings.CutPrefix(line, "Pss:"); ok {
-				kib, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(rest), " kB"))
+			key, rest, ok := strings.Cut(line, ":")
+			if !ok {
+				continue
+			}
+			kib, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(rest), " kB"))
+			switch key {
+			case "Pss":
 				r.PSSKiB[name] += kib
 				r.Total += kib
+			case "Pss_Anon":
+				r.Anon += kib
 			}
 		}
-		r.byPID[pid] = struct{}{}
+		r.Processes++
 	}
-	r.Processes = len(r.byPID)
 	if r.Processes == 0 {
 		return errors.New("no processes to measure")
 	}
@@ -270,35 +302,33 @@ func freePort() (int, error) {
 
 func median(xs []float64) float64 {
 	s := slices.Sorted(slices.Values(xs))
+	if len(s)%2 == 0 {
+		return (s[len(s)/2-1] + s[len(s)/2]) / 2
+	}
 	return s[len(s)/2]
 }
 
 func report(results []Result) {
 	fmt.Println()
-	fmt.Println("| file | setup | processes | PSS (MiB) | by process (MiB) | until /health (ms) |")
-	fmt.Println("| --- | --- | --- | --- | --- | --- |")
+	fmt.Println("| file | setup | processes | PSS (MiB) | anonymous (MiB) | by process (MiB) | until /health (ms) |")
+	fmt.Println("| --- | --- | --- | --- | --- | --- | --- |")
 	for _, r := range results {
-		var ready, total []float64
+		var ready, total, anon []float64
 		byName := map[string][]float64{}
 		for _, one := range r.Runs {
 			ready = append(ready, one.ReadyMs)
 			total = append(total, float64(one.Total)/1024)
+			anon = append(anon, float64(one.Anon)/1024)
 			for name, kib := range one.PSSKiB {
 				byName[name] = append(byName[name], float64(kib)/1024)
 			}
 		}
 		var parts []string
-		for _, name := range slices.Sorted(func(yield func(string) bool) {
-			for n := range byName {
-				if !yield(n) {
-					return
-				}
-			}
-		}) {
+		for _, name := range slices.Sorted(maps.Keys(byName)) {
 			parts = append(parts, fmt.Sprintf("%s %.1f", name, median(byName[name])))
 		}
-		fmt.Printf("| %s (%d values) | %s | %d | %.1f | %s | %.1f |\n",
-			r.File, r.Keys, r.Setup, r.Runs[0].Processes, median(total), strings.Join(parts, ", "), median(ready))
+		fmt.Printf("| %s (%d values) | %s | %d | %.1f | %.1f | %s | %.1f |\n",
+			r.File, r.Keys, r.Setup, r.Runs[0].Processes, median(total), median(anon), strings.Join(parts, ", "), median(ready))
 	}
 	fmt.Println()
 	fmt.Println("Medians of", len(results[0].Runs), "runs each.")
