@@ -39,8 +39,9 @@ dotenvx.Overload(".env", ".env.local") // replace variables; the last file wins
 values, err := dotenvx.Read(".env")   // the values, without touching the environment
 ```
 
-With no files, `Load` reads the files named in `DOTENV_FILE`, or the ones the
-`DOTENV_PRIVATE_KEY*` variables imply, or else `.env`, as dotenvx does. A
+With no files, `Load` reads the files named in `DOTENV_FILE`, or else
+`DOTENV_PATH`, or else `DOTENV_F`, or the ones the `DOTENV_PRIVATE_KEY*`
+variables imply, or else `.env`, as dotenvx does. A
 missing file is an error that wraps `fs.ErrNotExist`, so `.env` can be
 optional:
 
@@ -135,9 +136,10 @@ tools and tests.
 
 ## What it doesn't do
 
-dotenvx's own `config()` does more than load values. It redacts secrets
-from the program's output, following `Dotenvxfile` policies, by patching
-Node's output streams, and it can get keys from key stores (1Password,
+dotenvx's own `config()` does more than load values. It checks the loaded
+values against `Dotenvxfile` policies (required keys, types, `strict`
+failures), redacts secrets from the program's output as those policies say,
+by patching Node's output streams, and it can get keys from key stores (1Password,
 Bitwarden, the system keychain, dotenvx Armor). This port does none of that,
 and doesn't print dotenvx's inject summary either.
 
@@ -151,10 +153,10 @@ will live too. Encrypting and editing files also stay with the CLI.
 ## Command substitution
 
 As in dotenvx, `KEY=$(command)` runs the command with `/bin/sh` while
-loading, and so does an existing value of a key the file sets.
-That's surprising in a library, and there is no `/bin/sh` on Windows or in
-minimal container images (where the value is kept as it is), so it can be
-turned off:
+loading, and so does an existing value of a key the file sets (single-quoted
+values such as `KEY='$(command)'` are never run). That's surprising in a
+library, and on Windows or in minimal container images, where there is no
+`/bin/sh`, the value is kept as it is, so it can be turned off:
 
 ```go
 dotenvx.Options{DisableCommandSubstitution: true}.Load()
@@ -169,7 +171,7 @@ treats `$$` in a value, for example), where dotenvx would hang or crash, and
 in a few places where Go calls for it: commands always run with `/bin/sh`,
 even on Windows, where dotenvx uses `cmd.exe`, paths are used as given,
 without `~` expansion, and keys must be exactly 64 hex digits. Each
-deviation is documented on the function concerned.
+deviation is documented in the godoc where it applies.
 
 ## License
 
