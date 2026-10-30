@@ -3,6 +3,7 @@ package dotenvx
 import (
 	"bytes"
 	"maps"
+	"slices"
 	"testing"
 )
 
@@ -67,7 +68,13 @@ var nodePending = map[string]string{
 }
 
 func TestSpec(t *testing.T) {
-	for _, sc := range loadSpec(t) {
+	scenarios := loadSpec(t)
+	var names []string
+	for _, sc := range scenarios {
+		names = append(names, sc.name)
+	}
+	checkPending(t, specPending, names)
+	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
 			got, err := Options{Env: specEnv}.Parse(bytes.NewReader(sc.src))
 			checkGolden(t, specPending[sc.name], got, err, sc.expected)
@@ -76,11 +83,27 @@ func TestSpec(t *testing.T) {
 }
 
 func TestNodeGoldens(t *testing.T) {
-	for _, g := range loadNodeGoldens(t) {
+	goldens := loadNodeGoldens(t)
+	var names []string
+	for _, g := range goldens {
+		names = append(names, g.name)
+	}
+	checkPending(t, nodePending, names)
+	for _, g := range goldens {
 		t.Run(g.name, func(t *testing.T) {
 			got, err := Options{Env: specEnv, Overload: g.overload}.Parse(bytes.NewReader(g.src))
 			checkGolden(t, nodePending[g.name], got, err, g.expected)
 		})
+	}
+}
+
+// checkPending fails if a pending entry names no case.
+func checkPending(t *testing.T, pending map[string]string, names []string) {
+	t.Helper()
+	for name := range pending {
+		if !slices.Contains(names, name) {
+			t.Errorf("pending entry %s names no case", name)
+		}
 	}
 }
 

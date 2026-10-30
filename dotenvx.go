@@ -23,6 +23,10 @@ type Options struct {
 // Parse reads dotenv source from r and returns its values. It doesn't modify
 // the process environment. When a key is assigned more than once, the last
 // assignment wins.
+//
+// The source is read as UTF-8. Bytes that aren't valid UTF-8 are kept as
+// they are, where dotenvx, which only sees decoded text, would have replaced
+// them with U+FFFD.
 func (o Options) Parse(r io.Reader) (map[string]string, error) {
 	src, err := io.ReadAll(r)
 	if err != nil {

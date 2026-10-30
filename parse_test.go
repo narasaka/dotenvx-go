@@ -62,6 +62,21 @@ func TestParseSyntax(t *testing.T) {
 		{"vertical tab is whitespace", "A=\u000bx\u000b", map[string]string{"A": "x"}},
 		{"next line is trimmed", "A=\u0085x\u0085", map[string]string{"A": "\u0085x\u0085"}},
 		{"tab separated", "A\t=\tx", map[string]string{"A": "x"}},
+		// JavaScript also ends lines at U+2028 and U+2029.
+		{"LS ends a quoted value", "A=\"x\"\u2028B=2", map[string]string{"A": "x", "B": "2"}},
+		{"PS ends a quoted value", "A='x'\u2029B=2", map[string]string{"A": "x", "B": "2"}},
+		{"LS ends a comment", "# c\u2028A=1", map[string]string{"A": "1"}},
+		{"PS ends an inline comment", "A=x # note\u2029B=2", map[string]string{"A": "x", "B": "2"}},
+		{"LS stays inside an unquoted value", "A=one\u2028B=two", map[string]string{"A": "one\u2028B=two"}},
+		{"quotes after LS are removed", "A=x\u2028\"y\"", map[string]string{"A": "x\u2028y"}},
+		{"quotes after PS are removed", "A=x\u2029'y'", map[string]string{"A": "x\u2029y"}},
+		{"several quoted segments", "A=x\u2028\"y\"\u2028`z`", map[string]string{"A": "x\u2028y\u2028z"}},
+		{"quoted segments with text between", "A=x\u2028\"y\" w\u2029'z'", map[string]string{"A": "x\u2028\"y\" w\u2029z"}},
+		{"greedy to the last closing quote", "A=x\u2028'a'\u2028'b'", map[string]string{"A": "x\u2028a'\u2028'b"}},
+		{"quote style comes from the first character", "A='x\u2028\"y\\'\"", map[string]string{"A": "'x\u2028y'"}},
+		{"unquoted values run past separators", "\u2028A=1\u2029\u2029B=2", map[string]string{"A": "1\u2029\u2029B=2"}},
+		{"key on a line after LS", "A=\"1\" \u2028 export B=2", map[string]string{"A": "1", "B": "2"}},
+		{"line start after a separator", "\u2028A=\"1\"\u2029\u2029B=2", map[string]string{"A": "1", "B": "2"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,6 +88,18 @@ func TestParseSyntax(t *testing.T) {
 				t.Errorf("Parse(%q) = %q, want %q", tt.src, got, tt.want)
 			}
 		})
+	}
+}
+
+// Node only ever sees decoded text, in which invalid UTF-8 has already become
+// U+FFFD. The port passes the bytes through, the way a shell would.
+func TestParseInvalidUTF8(t *testing.T) {
+	got, err := Options{Env: []string{}}.Parse(strings.NewReader("A=\xff\nB=\"\xfe\""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"A": "\xff", "B": "\xfe"}; !maps.Equal(got, want) {
+		t.Errorf("Parse = %q, want %q", got, want)
 	}
 }
 
