@@ -15,16 +15,19 @@ import (
 // the .env in it. Paths are used as given: unlike the path option of
 // dotenvx's config, a leading "~" isn't expanded and commas don't separate
 // paths. With no files, like dotenvx, Read reads the comma-separated files
-// named by DOTENV_FILE, DOTENV_PATH or DOTENV_F in the existing
-// environment, the first that is set, or else ".env".
+// named by DOTENV_FILE, DOTENV_PATH or DOTENV_F, the first that isn't
+// empty, or else ".env". It looks for those in the existing environment
+// only: with Env set, that is Env, where dotenvx would also check the
+// process environment.
 //
 // Files are read in order, and each one sees the values set by the files
 // before it as existing values. So unless Overload is set, the first file to
 // set a key wins, and with Overload the last one does.
 //
 // A file that can't be read doesn't stop the others: Read returns the values
-// it could read together with the errors. To make .env optional, ignore
-// errors that wrap fs.ErrNotExist.
+// it could read together with the errors. To make a single file optional,
+// ignore an error that wraps fs.ErrNotExist. With several files, that would
+// also ignore errors joined with it.
 func (o Options) Read(files ...string) (map[string]string, error) {
 	values, _, err := o.read(files, o.environment())
 	return values, err
@@ -72,7 +75,7 @@ func defaultFiles(env environment) []string {
 	for _, name := range []string{"DOTENV_FILE", "DOTENV_PATH", "DOTENV_F"} {
 		if v := env.vars[name]; v != "" {
 			for _, file := range strings.Split(v, ",") {
-				if file = strings.TrimSpace(file); file != "" {
+				if file = strings.TrimFunc(file, isJSSpace); file != "" {
 					files = append(files, file)
 				}
 			}

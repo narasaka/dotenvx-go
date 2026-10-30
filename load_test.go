@@ -233,6 +233,7 @@ func TestReadDefaultFiles(t *testing.T) {
 	a := writeFile(t, dir, "a.env", "A=a\nB=a")
 	b := writeFile(t, dir, "b.env", "B=b\nC=b")
 	writeFile(t, dir, ".env", "DEFAULT=1")
+	writeFile(t, dir, "\u0085", "NEL=1")
 	t.Chdir(dir)
 	tests := []struct {
 		name string
@@ -246,12 +247,17 @@ func TestReadDefaultFiles(t *testing.T) {
 		// variable.
 		{"no names", []string{"DOTENV_FILE= , ", "DOTENV_PATH=" + b}, map[string]string{"DEFAULT": "1"}},
 		{"only commas", []string{"DOTENV_FILE=,,"}, map[string]string{"DEFAULT": "1"}},
+		// Names are trimmed the way JavaScript trims: of the byte order mark,
+		// but not of U+0085.
+		{"byte order mark", []string{"DOTENV_FILE=\ufeff" + a + ",\ufeff"}, map[string]string{"A": "a", "B": "a"}},
+		{"only a byte order mark", []string{"DOTENV_FILE=\ufeff,"}, map[string]string{"DEFAULT": "1"}},
+		{"next line", []string{"DOTENV_FILE=\u0085"}, map[string]string{"NEL": "1"}},
 		// The names are case-sensitive, as in dotenvx, even on Windows.
 		{"other case", []string{"dotenv_file=" + a}, map[string]string{"DEFAULT": "1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _, err := Options{Env: tt.env}.read(nil, environment{vars: environ(tt.env), fold: true})
+			got, _, err := Options{}.read(nil, environment{vars: environ(tt.env), fold: true})
 			if err != nil || !maps.Equal(got, tt.want) {
 				t.Errorf("Read() = %q, %v; want %q", got, err, tt.want)
 			}

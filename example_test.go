@@ -57,15 +57,15 @@ func ExampleOptions_Read() {
 func ExampleLoad() {
 	// Load .env from the current directory, if there is one, keeping
 	// variables that are already set.
-	if err := dotenvx.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := dotenvx.Load(".env"); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Fatal(err)
 	}
 	fmt.Println(os.Getenv("HELLO"))
 }
 
 func ExampleOverload() {
-	// Load the shared defaults, then let .env.local replace any of them and
-	// any variables that are already set.
+	// Overload replaces variables that are already set, and .env.local,
+	// read last, wins over .env.
 	if err := dotenvx.Overload(".env", ".env.local"); err != nil {
 		log.Fatal(err)
 	}
