@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Options configures how dotenv source is resolved. The zero value is ready
@@ -39,10 +40,31 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 	}
 	existing := environ(env)
 	parsed := map[string]string{}
+	// literals holds the values of single-quoted assignments.
+	literals := map[string]string{}
+	// lookup resolves a reference: existing values win, unless overloading.
+	lookup := func(name string) (string, bool) {
+		first, second := existing, parsed
+		if o.Overload {
+			first, second = parsed, existing
+		}
+		if v, ok := first[name]; ok {
+			return v, true
+		}
+		v, ok := second[name]
+		return v, ok
+	}
 	for _, a := range scan(string(src)) {
 		value := a.value
 		if v, ok := existing[a.key]; ok && !o.Overload {
 			value = v
+		}
+		// Existing values are taken as they are, unless they are empty.
+		if a.quote != '\'' && (existing[a.key] == "" || o.Overload) {
+			value = strings.ReplaceAll(expand(value, lookup, literals), `\$`, "$")
+		}
+		if a.quote == '\'' {
+			literals[a.key] = value
 		}
 		parsed[a.key] = value
 	}
