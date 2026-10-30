@@ -68,8 +68,9 @@ Encrypt a `.env` with the dotenvx CLI:
 dotenvx encrypt
 ```
 
-That replaces each value with `encrypted:…` and writes the private key to
-`.env.keys`, which you keep out of version control. `Load` finds `.env.keys`
+That replaces each value with `encrypted:…`, except for keys ending in
+`_PLAIN` and keys a `Dotenvxfile` stores as plaintext, and writes the
+private key to `.env.keys`, which you keep out of version control. `Load` finds `.env.keys`
 next to each file, except that, as in dotenvx, it reads `.env.keys` in the
 current directory when the file's own key variable is already set
 (`DOTENV_PRIVATE_KEY_PRODUCTION` for `.env.production`).
@@ -97,8 +98,9 @@ still loading everything else.
 
 ### Embedding
 
-The encrypted file is safe to compile into the binary, so a single binary can
-carry its configuration and only needs the key at run time:
+Once every secret in it is encrypted, the file is safe to compile into the
+binary, so a single binary can carry its configuration and only needs the key
+at run time:
 
 ```go
 package main
