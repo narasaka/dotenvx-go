@@ -1,5 +1,5 @@
 // Command bench measures what it costs a Go server to get its configuration
-// from a dotenvx-encrypted file, four ways:
+// from a dotenvx-encrypted file:
 //
 //   - plain: the variables are already in the environment, unencrypted (the
 //     baseline, as if the platform held every secret);
@@ -11,7 +11,7 @@
 // A fifth setup, linked, starts the lib build with plaintext variables, which
 // shows what linking dotenvx-go costs apart from loading a file.
 //
-// For each env file in env/ and each way, it starts the dummy server in app/
+// For each env file in env/ and each setup, it starts the dummy server in app/
 // several times, and reports how long it took until /health answered and the
 // memory (PSS) of every process involved once it was serving. It runs on
 // Linux, from the bench directory:
@@ -83,8 +83,11 @@ func main() {
 
 func run(ctx context.Context, dotenvxBin string, runs int, settle time.Duration, jsonOut string) error {
 	rollup, err := os.ReadFile("/proc/self/smaps_rollup")
-	if err != nil || !strings.Contains(string(rollup), "\nPss_Anon:") {
-		return errors.New("needs Linux 5.4 or later, for Pss_Anon in /proc/<pid>/smaps_rollup")
+	if err != nil {
+		return fmt.Errorf("needs Linux's /proc/<pid>/smaps_rollup: %w", err)
+	}
+	if !strings.Contains(string(rollup), "\nPss_Anon:") {
+		return errors.New("needs a kernel that reports Pss_Anon in /proc/<pid>/smaps_rollup")
 	}
 	dotenvxBin, err = filepath.Abs(dotenvxBin)
 	if err != nil {
