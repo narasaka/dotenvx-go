@@ -6,7 +6,7 @@ The dotenvx conformance suite from https://dotenvx.com/spec: 88 parsing
 scenarios, each `<scenario>.env` with its expected values in `expected.json`.
 They come from `_data/report.json` in the dotenvx.com site repository
 (github.com/dotenvx/dotenvx.github.io, commit b3eda9c) and were extracted
-with `go run extract.go path/to/report.json`.
+with `go run extract.go path/to/report.json`, run from `testdata/spec`.
 
 The suite was run with `MACHINE=machine` already in the environment, and
 existing variables win unless overload is on. That is why `103_MACHINE`
@@ -38,7 +38,8 @@ The `*.json` goldens are generated output, not hand-written expectations. They
 are what `@dotenvx/primitives` 4.3.0, the Node implementation of dotenvx,
 returns for each file with `MACHINE=machine` as the only existing environment
 variable: `NAME.json` without overload, and `NAME.overload.json` with it.
-Regenerate them with `node generate.js path/to/node_modules/@dotenvx/primitives`.
+Regenerate them with `node generate.js path/to/node_modules/@dotenvx/primitives`
+(it writes next to itself, from any directory).
 It refuses any other version of the package, and any fixture that Node
 reports errors for.
 
