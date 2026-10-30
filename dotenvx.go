@@ -34,9 +34,15 @@ type Options struct {
 // the process environment. When a key is assigned more than once, the last
 // assignment wins.
 //
-// Values that aren't single-quoted have their $NAME and ${NAME} references
-// expanded, as do ${NAME:-default}, ${NAME-default}, ${NAME:+alternative}
-// and ${NAME+alternative}, the way dotenvx expands them. Names resolve to
+// Values that aren't single-quoted first have each $(command) replaced
+// with the command's output, unless DisableCommandSubstitution is set. The
+// output is inserted as it is, where dotenvx would turn "$&" in it into the
+// command's text and invalid UTF-8 into U+FFFD.
+//
+// Values that aren't single-quoted, and had no command substituted, then
+// have their $NAME and ${NAME} references expanded, as do
+// ${NAME:-default}, ${NAME-default}, ${NAME:+alternative} and
+// ${NAME+alternative}, the way dotenvx expands them. Names resolve to
 // existing values first, then to values parsed earlier, or the other way
 // round with Overload. A backslash keeps a "$" from starting a reference.
 // Existing values that aren't empty are used as they are, unexpanded.

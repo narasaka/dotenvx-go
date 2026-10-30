@@ -1,15 +1,21 @@
 package dotenvx
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
 )
 
+// maxOutput is the most output a command may write. Like execSync's
+// default maxBuffer, more counts as a failure.
+const maxOutput = 1 << 20
+
 // evaluate replaces each $(command) in value with the command's output,
 // minus trailing newlines. Commands run with /bin/sh -c, as Node's execSync
-// runs them, with env as their environment. If any command fails, or can't
-// run at all, evaluate returns value unchanged, like dotenvx.
+// runs them, with env as their environment. If any command fails, can't
+// run at all, or writes more than maxOutput bytes, evaluate returns value
+// unchanged, like dotenvx.
 func evaluate(value string, env []string) string {
 	var b strings.Builder
 	last := 0
@@ -18,16 +24,34 @@ func evaluate(value string, env []string) string {
 		cmd.Env = env
 		// Like execSync, let the user see what the command reports.
 		cmd.Stderr = os.Stderr
-		out, err := cmd.Output()
-		if err != nil {
+		out := &cappedOutput{cmd: cmd}
+		cmd.Stdout = out
+		if err := cmd.Run(); err != nil {
 			return value
 		}
 		b.WriteString(value[last:span[0]])
-		b.WriteString(strings.TrimRight(string(out), "\r\n"))
+		b.WriteString(strings.TrimRight(out.String(), "\r\n"))
 		last = span[1]
 	}
 	b.WriteString(value[last:])
 	return b.String()
+}
+
+var errOutputTooLong = errors.New("command output too long")
+
+// cappedOutput collects a command's output, and kills the command once it
+// writes more than maxOutput bytes.
+type cappedOutput struct {
+	strings.Builder
+	cmd *exec.Cmd
+}
+
+func (c *cappedOutput) Write(p []byte) (int, error) {
+	if c.Len()+len(p) > maxOutput {
+		c.cmd.Process.Kill()
+		return 0, errOutputTooLong
+	}
+	return c.Builder.Write(p)
 }
 
 // commandSpans returns the start and end of each $(command) in s.

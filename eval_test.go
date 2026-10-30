@@ -43,6 +43,25 @@ func TestParseCommandSubstitutionDeviations(t *testing.T) {
 	parseCase{src: `A=$(printf %s "x$&y")`, want: map[string]string{"A": "x$&y"}}.run(t)
 }
 
+// Node's execSync treats output over 1 MiB as a failure, which keeps the
+// value as it is.
+func TestParseCommandOutputLimit(t *testing.T) {
+	tests := []struct {
+		name, src, want string
+	}{
+		{"1 MiB", "A=$(printf %01048576d 0)", strings.Repeat("0", 1<<20)},
+		{"more", "A=$(printf %01048577d 0)", "$(printf %01048577d 0)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Options{Env: []string{}}.Parse(strings.NewReader(tt.src))
+			if err != nil || got["A"] != tt.want {
+				t.Errorf("A has %d bytes, error %v; want %d bytes", len(got["A"]), err, len(tt.want))
+			}
+		})
+	}
+}
+
 func TestParseDisableCommandSubstitution(t *testing.T) {
 	opts := Options{Env: []string{"B=b"}, DisableCommandSubstitution: true}
 	got, err := opts.Parse(strings.NewReader("A=$(echo hi)$B"))
