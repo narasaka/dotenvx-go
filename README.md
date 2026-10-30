@@ -70,11 +70,12 @@ dotenvx encrypt
 
 That replaces each value with `encrypted:…`, except for keys a
 `Dotenvxfile` stores as plaintext and, unless it says otherwise, keys ending
-in `_PLAIN`. It then asks where to keep the private key (in CI or without a
-terminal it uses `.env.keys` without asking). Choose the `.env.keys` file and
-keep it out of version control: this library doesn't read key stores, so a
-key kept in one has to be set as `DOTENV_PRIVATE_KEY` or come through
-`Options.KeyProvider`.
+in `_PLAIN`. The first time, it asks where to keep the private key (in CI or
+without a terminal it uses `.env.keys` without asking). Choose the
+`.env.keys` file and keep it out of version control: this library doesn't
+read key stores, so a key kept in one has to be exported and set as
+`DOTENV_PRIVATE_KEY`, or fetched through `Options.KeyProvider`. Enclaved
+dotenvx Armor keys never leave Armor, so this library can't use them.
 
 `Load` finds `.env.keys` next to each file, except that, as in dotenvx, it
 reads `.env.keys` in the current directory when the file's own key variable
