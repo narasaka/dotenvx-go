@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -35,6 +36,28 @@ type Options struct {
 	// it is. What a command writes to stderr is written to os.Stderr after
 	// it finishes, as dotenvx does.
 	DisableCommandSubstitution bool
+
+	// KeyFiles are the files, usually named .env.keys, to read the private
+	// keys of encrypted values from: the values of their DOTENV_PRIVATE_KEY*
+	// keys, each of which may list several keys separated by commas. Files
+	// that can't be read are skipped. If KeyFiles is nil, Parse reads
+	// .env.keys in the current directory, and Read and Load the .env.keys
+	// next to each env file, as dotenvx does; but when that file's own
+	// private key is set in the environment (DOTENV_PRIVATE_KEY_PRODUCTION
+	// for .env.production), dotenvx reads .env.keys in the current
+	// directory instead, and so do they. Use an empty slice to read none.
+	//
+	// Private keys also come from the DOTENV_PRIVATE_KEY* variables of the
+	// existing environment, each holding a single key.
+	KeyFiles []string
+
+	// KeyProvider, if set, is asked for the private key of each public key
+	// that has none from KeyFiles or the environment: those the source
+	// declares in its DOTENV_PUBLIC_KEY* values, and those of the
+	// environment's DOTENV_PUBLIC_KEY* variables. It returns the private key
+	// in hex, or "" if it has none. An invalid key is ignored. An error
+	// stops parsing, and is returned. It is where key stores plug in.
+	KeyProvider func(publicKey string) (privateKey string, err error)
 }
 
 // Parse reads dotenv source from r and returns its values. It doesn't modify
@@ -81,22 +104,33 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dotenvx: %w", err)
 	}
-	values, _, err := o.parse(decode(src), o.environment(), "dotenvx: ")
+	keyFiles := o.KeyFiles
+	if keyFiles == nil {
+		keyFiles = []string{".env.keys"}
+	}
+	values, _, err := o.parse(decode(src), o.environment(), keyFiles, "dotenvx: ")
 	return values, err
 }
 
 // environment returns Env, or the process environment if Env is nil.
 func (o Options) environment() environment {
 	if o.Env == nil {
-		return environment{vars: environ(os.Environ()), fold: runtime.GOOS == "windows"}
+		return newEnvironment(os.Environ(), runtime.GOOS == "windows")
 	}
-	return environment{vars: environ(o.Env)}
+	return newEnvironment(o.Env, false)
 }
 
-// parse resolves the values in src against the existing environment. It
-// also returns the keys in the order they were first assigned, which is the
+// parse resolves the values in src against the existing environment,
+// decrypting with the keys of keyFiles, Env and KeyProvider. It also
+// returns the keys in the order they were first assigned, which is the
 // order dotenvx sets them in. Its errors start with prefix.
-func (o Options) parse(src string, existing environment, prefix string) (map[string]string, []string, error) {
+func (o Options) parse(src string, existing environment, keyFiles []string, prefix string) (map[string]string, []string, error) {
+	assignments := scan(src)
+	declared := publicKeys(assignments)
+	ring, err := newKeyring(declared, existing, keyFiles, o.KeyProvider)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s%w", prefix, err)
+	}
 	parsed := map[string]string{}
 	// literals holds the values of single-quoted assignments.
 	literals := map[string]string{}
@@ -112,25 +146,32 @@ func (o Options) parse(src string, existing environment, prefix string) (map[str
 		v, ok := second[name]
 		return v, ok
 	}
-	var keys []string
+	var keys, undecrypted []string
 	var errs []error
-	for _, a := range scan(src) {
+	for _, a := range assignments {
 		value := a.value
 		current, exists := existing.get(a.key)
 		if exists && !o.Overload {
 			value = current
 		}
+		if isEncrypted(value) {
+			value = ring.decrypt(value, declared)
+			if isEncrypted(value) && !slices.Contains(undecrypted, a.key) {
+				undecrypted = append(undecrypted, a.key)
+			}
+		}
+		encrypted := isEncrypted(value)
 		// Like dotenvx, evaluate a value from the environment only if the
 		// source didn't replace it.
 		evaluated := false
-		if a.quote != '\'' && !o.DisableCommandSubstitution &&
+		if !encrypted && a.quote != '\'' && !o.DisableCommandSubstitution &&
 			strings.Contains(value, "$(") && (!exists || current == value) {
 			next := evaluate(value, commandEnv(existing.vars, parsed))
 			evaluated = next != value
 			value = next
 		}
 		// Existing values are taken as they are, unless they are empty.
-		if a.quote != '\'' && !evaluated && (current == "" || o.Overload) {
+		if !encrypted && a.quote != '\'' && !evaluated && (current == "" || o.Overload) {
 			expanded, err := expand(value, lookup, literals)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%sexpanding %s: %w", prefix, a.key, err))
@@ -144,6 +185,9 @@ func (o Options) parse(src string, existing environment, prefix string) (map[str
 			keys = append(keys, a.key)
 		}
 		parsed[a.key] = value
+	}
+	if len(undecrypted) > 0 {
+		errs = append(errs, fmt.Errorf("%s%w", prefix, &Error{Code: ErrDecryptionFailed.Code, Message: "could not decrypt " + strings.Join(undecrypted, ", ")}))
 	}
 	return parsed, keys, errors.Join(errs...)
 }

@@ -55,7 +55,7 @@ func (o Options) read(files []string, env environment) (map[string]string, []set
 			errs = append(errs, fmt.Errorf("dotenvx: %w", err))
 			continue
 		}
-		parsed, keys, err := o.parse(decode(src), env, "dotenvx: "+file+": ")
+		parsed, keys, err := o.parse(decode(src), env, o.keyFilesFor(file, env), "dotenvx: "+file+": ")
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -80,6 +80,15 @@ func defaultFiles(env environment) []string {
 				}
 			}
 			break
+		}
+	}
+	if len(files) > 0 {
+		return files
+	}
+	// Set private keys name their files, in the environment's order.
+	for _, name := range env.names {
+		if strings.HasPrefix(name, "DOTENV_PRIVATE_KEY") {
+			files = append(files, guessFile(name))
 		}
 	}
 	if len(files) == 0 {

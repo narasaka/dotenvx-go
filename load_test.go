@@ -164,12 +164,12 @@ func TestLoadErrors(t *testing.T) {
 // case-insensitive there, but expands from a copy of it, whose names aren't.
 func TestParseFoldedEnv(t *testing.T) {
 	env := environment{vars: environ([]string{"Path=env"}), fold: true}
-	got, _, err := Options{}.parse("PATH=file\nA=$PATH|$Path|${path:-unset}", env, "")
+	got, _, err := Options{}.parse("PATH=file\nA=$PATH|$Path|${path:-unset}", env, nil, "")
 	if want := map[string]string{"PATH": "env", "A": "env|env|unset"}; err != nil || !maps.Equal(got, want) {
 		t.Errorf("parse = %q, %v; want %q", got, err, want)
 	}
 	env.fold = false
-	got, _, err = Options{}.parse("PATH=file", env, "")
+	got, _, err = Options{}.parse("PATH=file", env, nil, "")
 	if want := map[string]string{"PATH": "file"}; err != nil || !maps.Equal(got, want) {
 		t.Errorf("without folding, parse = %q, %v; want %q", got, err, want)
 	}

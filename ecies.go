@@ -29,6 +29,11 @@ const (
 	uncompressedPoint = 4
 )
 
+// isEncrypted reports whether value is encrypted for dotenvx.
+func isEncrypted(value string) bool {
+	return strings.HasPrefix(value, encryptedPrefix)
+}
+
 // Decrypt decrypts a value encrypted for dotenvx with privateKey, a
 // secp256k1 private key in hex. Like dotenvx, it returns values that don't
 // start with "encrypted:" as they are.
