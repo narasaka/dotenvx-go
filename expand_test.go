@@ -112,6 +112,14 @@ func TestParseExpansionWithoutCycles(t *testing.T) {
 		{name: "a long chain", src: "A=x$B0", env: chain, want: map[string]string{"A": "xdone"}},
 		{name: "a self-reference that resolves to its alternative", src: "B=y${A}", env: []string{"A=${A+z}"}, want: map[string]string{"B": "yz"}},
 		{name: "a self-reference that resolves to nothing", src: "B=y${A}${A:-q}", env: []string{"A=${A:+}"}, want: map[string]string{"B": "y"}},
+		// References assembled from a substituted value and the text after it.
+		{name: "a dollar followed by a name", src: "A=x${D}D", env: []string{"D=$"}, want: map[string]string{"A": "x$"}},
+		{name: "text and a dollar followed by a name", src: "A=x${D}D", env: []string{"D=foo$"}, want: map[string]string{"A": "xfoofoo$"}},
+		{name: "a dollar followed by a braced name", src: "A=x${D}{D}", env: []string{"D=$"}, want: map[string]string{"A": "x$"}},
+		{name: "a dollar followed by a substituted name", src: "A=${L}${M}", env: []string{"L=$", "M=L"}, want: map[string]string{"A": "$"}},
+		{name: "text, a dollar and a substituted name", src: "A=x${L}${M}", env: []string{"L=$", "M=L"}, want: map[string]string{"A": "x$"}},
+		// dotenvx stops here because the result equals a variable's value.
+		{name: "a result equal to a value", src: "A=${L:++${B-}", env: []string{"B=$L}$B", "L="}, want: map[string]string{"A": "$L}$B"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, tt.run)
@@ -119,7 +127,8 @@ func TestParseExpansionWithoutCycles(t *testing.T) {
 }
 
 // Node loops forever on these. The port stops expanding the value where it
-// would repeat itself, and reports the cycle.
+// would insert a variable's value into text that came from that value, and
+// reports the cycle.
 func TestParseExpansionCycle(t *testing.T) {
 	tests := []struct {
 		name string
@@ -129,6 +138,9 @@ func TestParseExpansionCycle(t *testing.T) {
 		{"growing", []string{"B=x$B"}, "yx$B"},
 		{"not growing", []string{"B=$B"}, "y$B"},
 		{"through another variable", []string{"B=${C}", "C=-$B"}, "y-$B"},
+		// Node gives "y" here: it discards the repeated reference along with
+		// the alternative that contains it, before it is substituted.
+		{"inside an alternative", []string{"B=$M", "M=${L:+${B}}"}, "y${L:+${B}}"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -138,6 +150,35 @@ func TestParseExpansionCycle(t *testing.T) {
 			}
 			if got["A"] != tt.want {
 				t.Errorf("A = %q, want %q", got["A"], tt.want)
+			}
+		})
+	}
+}
+
+// Node would eventually produce 2^15 x's here, or run out of memory with a
+// few more variables. The port gives up after maxInsertions substitutions.
+func TestParseExpansionLimit(t *testing.T) {
+	env := []string{"X15=x"}
+	for i := range 15 {
+		env = append(env, fmt.Sprintf("X%d=$X%d$X%d", i, i+1, i+1))
+	}
+	_, err := Options{Env: env}.Parse(strings.NewReader("A=y$X0"))
+	if !errors.Is(err, ErrExpansionLimit) {
+		t.Errorf("Parse error = %v, want ErrExpansionLimit", err)
+	}
+}
+
+func BenchmarkExpand(b *testing.B) {
+	lookup := func(string) (string, bool) { return "1", true }
+	for _, bc := range []struct{ name, value string }{
+		{"no references", strings.Repeat("x", 1<<20)},
+		{"many references", strings.Repeat("$A", 8000)},
+		{"many references to dollars", strings.Repeat("${A:-$}", 2000)},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				expand(bc.value, lookup, nil)
 			}
 		})
 	}

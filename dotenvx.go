@@ -40,7 +40,11 @@ type Options struct {
 // of Object.prototype, resolve like any other. Where dotenvx would loop
 // forever, because a variable refers back to itself, Parse leaves the
 // rest of that value unexpanded and returns its values with an error that
-// wraps ErrReferenceCycle.
+// wraps ErrReferenceCycle. It does that as soon as a reference that came
+// entirely from a variable's value would insert that value again, which
+// also stops a few contrived inputs that dotenvx finishes. A value that
+// would take more than 10,000 substitutions of variables' values stops the
+// same way, with ErrExpansionLimit.
 //
 // The source is read as UTF-8. Bytes that aren't valid UTF-8 are kept as
 // they are, where dotenvx, which only sees decoded text, would have replaced
