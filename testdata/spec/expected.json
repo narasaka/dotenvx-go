@@ -1,0 +1,310 @@
+{
+  "101_BASIC": {
+    "BASIC": "basic"
+  },
+  "102_EMPTY": {
+    "EMPTY": ""
+  },
+  "103_MACHINE": {
+    "MACHINE": "machine"
+  },
+  "104_INLINE_COMMENT": {
+    "INLINE_COMMENT": "inline comment"
+  },
+  "105_INLINE_COMMENT_NO_SPACE": {
+    "INLINE_COMMENT_NO_SPACE": "inline comments start with a"
+  },
+  "106_AFTER_LINE": {
+    "AFTER_LINE": "after_line"
+  },
+  "107_EXPORT": {
+    "KEY": "value"
+  },
+  "108_USERNAME": {
+    "USERNAME": "therealnerdybeast@example.tld"
+  },
+  "109_SPACED_KEY": {
+    "SPACED_KEY": "parsed"
+  },
+  "110_TRIM_SPACE": {
+    "TRIM_SPACE": "some spaced out string"
+  },
+  "111_EQUAL_SIGNS": {
+    "EQUAL_SIGNS": "equals=="
+  },
+  "112_DONT_EXPAND_NEWLINES": {
+    "DONT_EXPAND": "dontexpand\\nnewlines"
+  },
+  "113_HY-PHEN": {
+    "HY-PHEN": "hyphen"
+  },
+  "114_RETAIN_INNER_QUOTES": {
+    "RETAIN_INNER_QUOTES": "{\"foo\": \"bar\"}"
+  },
+  "115_DOLLAR": {
+    "DOLLAR": "$"
+  },
+  "116_DOTS": {
+    "POSTGRESQL.BASE.USER": "postgres"
+  },
+  "117_DONT_CHOKE": {
+    "DONT_CHOKE1": ".kZh`>4[,[DDU-*Jt+[;8-,@K=,9%;F9KsoXqOE)gpG^X!{)Q+/9Fc(QF}i[NEi!",
+    "DONT_CHOKE2": "=;+=CNy3)-D=zI6gRP2w\\$B@0K;Y]e^EFnCmx\\$Dx?;.9wf-rgk1BcTR0]JtY<S:b_",
+    "DONT_CHOKE3": "MUcKSGSY@HCON<1S_siWTP`DgS*Ug],mu]SkqI|7V2eOk9:>&fw;>HEwms`D8E2H",
+    "DONT_CHOKE4": "m]zjzfRItw2gs[2:{p{ugENyFw9m)tH6_VCQzer`*noVaI<vqa3?FZ9+6U;K#Bfd",
+    "DONT_CHOKE5": "#la__nK?IxNlQ%`5q&DpcZ>Munx=[1-AMgAcwmPkToxTaB?kgdF5y`A8m=Oa-B!)",
+    "DONT_CHOKE6": "xlC&*<j4J<d._<JKH0RBJV!4(ZQEN-+&!0p137<g*hdY2H4xk?/;KO1\\$(W{:Wc}Q",
+    "DONT_CHOKE7": "?\\$6)m*xhTVewc#NVVgxX%eBhJjoHYzpXFg=gzn[rWXPLj5UWj@z\\$/UDm8o79n/p%",
+    "DONT_CHOKE8": "@}:[4#g%[R-CFR});bY(Z[KcDQDsVn2_y4cSdU<Mjy!c^F`G<!Ks7]kbS]N1:bP:"
+  },
+  "201_SINGLE_QUOTES": {
+    "SINGLE_QUOTES": "single_quotes"
+  },
+  "202_SINGLE_QUOTES_EMPTY": {
+    "EMPTY": ""
+  },
+  "203_SINGLE_QUOTES_SPACED": {
+    "SINGLE_QUOTES_SPACED": "    single quotes    "
+  },
+  "204_SINGLE_QUOTES_DONT_EXPAND_NEWLINES": {
+    "DONT_EXPAND": "dontexpand\\nnewlines"
+  },
+  "205_SINGLE_QUOTES_INLINE_COMMENT": {
+    "INLINE_COMMENT": "inline comments outside of #singlequotes"
+  },
+  "206_SINGLE_QUOTES_MULTILINE": {
+    "MULTILINE": "one\ntwo\nthree"
+  },
+  "207_SINGLE_QUOTES_RETAIN_INNER_QUOTES": {
+    "RETAIN_INNER_QUOTES_AS_STRING": "{\"foo\": \"bar\"}"
+  },
+  "208_SINGLE_QUOTES_WITH_DOUBLE_QUOTES_INSIDE": {
+    "DOUBLE_QUOTES_INSIDE_SINGLE": "double \"quotes\" work inside single quotes"
+  },
+  "209_SINGLE_QUOTES_WITH_BACKTICKS_INSIDE": {
+    "BACKTICKS_INSIDE_SINGLE": "`backticks` work inside single quotes"
+  },
+  "210_SINGLE_QUOTES_PARENTHESES": {
+    "PARENTHESES": "passwo(rd"
+  },
+  "301_DOUBLE_QUOTES": {
+    "DOUBLE_QUOTES": "double_quotes"
+  },
+  "302_DOUBLE_QUOTES_EMPTY": {
+    "EMPTY": ""
+  },
+  "303_DOUBLE_QUOTES_SPACED": {
+    "DOUBLE_QUOTES_SPACED": "    double quotes    "
+  },
+  "304_DOUBLE_QUOTES_EXPAND_NEWLINES": {
+    "EXPAND_NEWLINES": "expand\nnew\nlines"
+  },
+  "305_DOUBLE_QUOTES_INLINE_COMMENT": {
+    "INLINE_COMMENTS_DOUBLE_QUOTES": "inline comments outside of #doublequotes"
+  },
+  "306_DOUBLE_QUOTES_MULTILINE": {
+    "MULTILINE": "one\ntwo\nthree"
+  },
+  "307_DOUBLE_QUOTES_MULTILINE_PEM": {
+    "MULTILINE_PEM_DOUBLE": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnNl1tL3QjKp3DZWM0T3u\nLgGJQwu9WqyzHKZ6WIA5T+7zPjO1L8l3S8k8YzBrfH4mqWOD1GBI8Yjq2L1ac3Y/\nbTdfHN8CmQr2iDJC0C6zY8YV93oZB3x0zC/LPbRYpF8f6OqX1lZj5vo2zJZy4fI/\nkKcI5jHYc8VJq+KCuRZrvn+3V+KuL9tF9v8ZgjF2PZbU+LsCy5Yqg1M8f5Jp5f6V\nu4QuUoobAgMBAAE=\n-----END PUBLIC KEY-----"
+  },
+  "308_DOUBLE_QUOTES_WITH_SINGLE_QUOTES_INSIDE": {
+    "SINGLE_QUOTES_INSIDE_DOUBLE": "single 'quotes' work inside double quotes"
+  },
+  "309_DOUBLE_QUOTES_WITH_BACKTICKS_INSIDE": {
+    "BACKTICKS_INSIDE_DOUBLE": "`backticks` work inside double quotes"
+  },
+  "310_DOUBLE_QUOTES_WITH_NO_SPACE_BRACKET": {
+    "DOUBLE_QUOTES_WITH_NO_SPACE_BRACKET": "{ port: }"
+  },
+  "311_DOUBLE_QUOTES_TWO_DOLLAR_SIGNS": {
+    "TWO_DOLLAR_SIGNS": "abcd$$1234"
+  },
+  "401_BACKTICKS": {
+    "BACKTICKS": "backticks"
+  },
+  "402_BACKTICKS_EMPTY": {
+    "EMPTY": ""
+  },
+  "403_BACKTICKS_SPACED": {
+    "BACKTICKS_SPACED": "    backticks    "
+  },
+  "404_BACKTICKS_INLINE_COMMENT": {
+    "INLINE_COMMENTS_BACKTICKS": "inline comments outside of #backticks"
+  },
+  "405_BACKTICKS_SINGLE_QUOTES_INSIDE": {
+    "SINGLE_QUOTES_INSIDE_BACKTICKS": "single 'quotes' work inside backticks"
+  },
+  "406_BACKTICKS_DOUBLE_QUOTES_INSIDE": {
+    "DOUBLE_QUOTES_INSIDE_BACKTICKS": "double \"quotes\" work inside backticks"
+  },
+  "407_BACKTICKS_DOUBLE_AND_SINGLE_QUOTES_INSIDE": {
+    "DOUBLE_AND_SINGLE_QUOTES_INSIDE_BACKTICKS": "double \"quotes\" and single 'quotes' work inside backticks"
+  },
+  "408_BACKTICKS_RETAIN_INNER_QUOTES": {
+    "RETAIN_INNER_QUOTES_AS_BACKTICKS": "{\"foo\": \"bar's\"}"
+  },
+  "501_EXPAND": {
+    "BASIC": "basic",
+    "BASIC_EXPAND": "basic"
+  },
+  "502_EXPAND_MACHINE": {
+    "MACHINE": "machine",
+    "MACHINE_EXPAND": "machine"
+  },
+  "503_EXPAND_FILE": {
+    "FILE": "file",
+    "FILE_EXPAND": "file"
+  },
+  "504_EXPAND_PARENTHESES": {
+    "PARENTHESES": "passwo(rd",
+    "PARENTHESES_EXPAND": "passwo(rd"
+  },
+  "505_EXPAND_RETAIN_INNER_QUOTES": {
+    "RETAIN_INNER_QUOTES": "{\"foo\": \"bar\"}",
+    "RETAIN_INNER_QUOTES_EXPAND": "{\"foo\": \"bar\"}"
+  },
+  "506_EXPAND_SINGLE_QUOTES_RETAIN_INNER_QUOTES": {
+    "RETAIN_INNER_QUOTES_AS_STRING": "{\"foo\": \"bar\"}",
+    "RETAIN_INNER_QUOTES_AS_STRING_EXPAND": "{\"foo\": \"bar\"}"
+  },
+  "507_EXPAND_ESCAPED": {
+    "ESCAPED_EXPAND": "$ESCAPED"
+  },
+  "508_EXPAND_NO_QUOTES_COMBOS": {
+    "ONE": "one",
+    "ONETWO": "onetwo",
+    "ONETWO_SIMPLE": "onetwo",
+    "ONETWO_SIMPLE2": "onetwo",
+    "ONETWO_SUPER_SIMPLE": "onetwo",
+    "TWO": "two"
+  },
+  "509_EXPAND_SELF": {
+    "EXPAND_SELF": ""
+  },
+  "510_EXPAND_URI": {
+    "MONGOLAB_DATABASE": "heroku_db",
+    "MONGOLAB_DOMAIN": "abcd1234.mongolab.com",
+    "MONGOLAB_PASSWORD": "password",
+    "MONGOLAB_PORT": "12345",
+    "MONGOLAB_URI": "mongodb://username:password@abcd1234.mongolab.com:12345/heroku_db",
+    "MONGOLAB_USER": "username"
+  },
+  "511_EXPAND_URI_RECURSIVE": {
+    "MONGOLAB_DATABASE": "heroku_db",
+    "MONGOLAB_DOMAIN": "abcd1234.mongolab.com",
+    "MONGOLAB_PASSWORD": "password",
+    "MONGOLAB_PORT": "12345",
+    "MONGOLAB_URI_RECURSIVE": "mongodb://username:password@abcd1234.mongolab.com:12345/heroku_db",
+    "MONGOLAB_USER": "username",
+    "MONGOLAB_USER_RECURSIVE": "username:password"
+  },
+  "512_EXPAND_URI_NO_CURLY_BRACES": {
+    "MONGOLAB_DATABASE": "heroku_db",
+    "MONGOLAB_DOMAIN": "abcd1234.mongolab.com",
+    "MONGOLAB_PASSWORD": "password",
+    "MONGOLAB_PORT": "12345",
+    "MONGOLAB_URI": "mongodb://username:password@abcd1234.mongolab.com:12345/heroku_db",
+    "MONGOLAB_USER": "username"
+  },
+  "513_EXPAND_URI_RECURSIVE_NO_CURLY_BRACES": {
+    "MONGOLAB_DATABASE": "heroku_db",
+    "MONGOLAB_DOMAIN": "abcd1234.mongolab.com",
+    "MONGOLAB_PASSWORD": "password",
+    "MONGOLAB_PORT": "12345",
+    "MONGOLAB_URI_RECURSIVE": "mongodb://username:password@abcd1234.mongolab.com:12345/heroku_db",
+    "MONGOLAB_USER": "username",
+    "MONGOLAB_USER_RECURSIVE": "username:password"
+  },
+  "514_EXPAND_DOTS": {
+    "POSTGRESQL.BASE.USER": "postgres",
+    "POSTGRESQL.MAIN.USER": "postgres"
+  },
+  "515_EXPAND_NOT_FOR_SINGLE_QUOTE": {
+    "SINGLE_QUOTE": "$BASIC"
+  },
+  "516_EXPAND_PROGRESSIVE": {
+    "PROGRESSIVE": "first-second"
+  },
+  "517_EXPAND_DEFAULT": {
+    "EXPAND_DEFAULT": "machine"
+  },
+  "518_EXPAND_DEFAULT2": {
+    "EXPAND_DEFAULT2": "machine"
+  },
+  "519_EXPAND_DEFAULT_NESTED": {
+    "EXPAND_DEFAULT_NESTED": "machine"
+  },
+  "520_EXPAND_DEFAULT_NESTED2": {
+    "EXPAND_DEFAULT_NESTED2": "machine"
+  },
+  "521_EXPAND_DEFAULT_NESTED_TWICE": {
+    "EXPAND_DEFAULT_NESTED_TWICE": "machinedefault"
+  },
+  "522_EXPAND_DEFAULT_NESTED_TWICE2": {
+    "EXPAND_DEFAULT_NESTED_TWICE2": "machinedefault"
+  },
+  "523_EXPAND_DEFAULT_SPECIAL_CHARACTERS": {
+    "EXPAND_DEFAULT_SPECIAL_CHARACTERS": "machine"
+  },
+  "524_EXPAND_DEFAULT_SPECIAL_CHARACTERS2": {
+    "EXPAND_DEFAULT_SPECIAL_CHARACTERS2": "machine"
+  },
+  "525_EXPAND_UNDEFINED": {
+    "EXPAND_UNDEFINED": ""
+  },
+  "526_EXPAND_UNDEFINED_NESTED": {
+    "EXPAND_UNDEFINED_NESTED": "machine"
+  },
+  "527_EXPAND_UNDEFINED_DEFAULT": {
+    "EXPAND_UNDEFINED_DEFAULT": "default"
+  },
+  "528_EXPAND_UNDEFINED_DEFAULT2": {
+    "EXPAND_UNDEFINED_DEFAULT2": "default"
+  },
+  "529_EXPAND_UNDEFINED_DEFAULT_NESTED": {
+    "EXPAND_UNDEFINED_DEFAULT_NESTED": "default"
+  },
+  "530_EXPAND_UNDEFINED_DEFAULT2_NESTED": {
+    "EXPAND_UNDEFINED_DEFAULT2_NESTED": "default"
+  },
+  "531_EXPAND_UNDEFINED_DEFAULT_NESTED_TWICE": {
+    "EXPAND_UNDEFINED_DEFAULT_NESTED_TWICE": "default"
+  },
+  "532_EXPAND_UNDEFINED_DEFAULT2_NESTED_TWICE": {
+    "EXPAND_UNDEFINED_DEFAULT2_NESTED_TWICE": "default"
+  },
+  "533_EXPAND_UNDEFINED_DEFAULT_SPECIAL_CHARACTERS": {
+    "EXPAND_UNDEFINED_DEFAULT_SPECIAL_CHARACTERS": "/default/path:with/colon"
+  },
+  "534_EXPAND_UNDEFINED_DEFAULT2_SPECIAL_CHARACTERS": {
+    "EXPAND_UNDEFINED_DEFAULT2_SPECIAL_CHARACTERS": "/default/path:with/colon"
+  },
+  "535_EXPAND_UNDEFINED_DEFAULT_SPECIAL_CHARACTERS_NESTED": {
+    "EXPAND_UNDEFINED_DEFAULT_SPECIAL_CHARACTERS_NESTED": "/default/path:with/colon"
+  },
+  "536_EXPAND_UNDEFINED_DEFAULT2_SPECIAL_CHARACTERS_NESTED": {
+    "EXPAND_UNDEFINED_DEFAULT2_SPECIAL_CHARACTERS_NESTED": "/default/path:with/colon"
+  },
+  "537_EXPAND_DEEP8": {
+    "BASIC": "basic",
+    "EXPAND_DEEP8": "prefix5-prefix4-prefix3-prefix2-prefix1-basic-suffix1-suffix2-suffix3-suffix4-suffix5"
+  },
+  "538_EXPAND_DEEP_SELF": {
+    "BASIC": "basic",
+    "EXPAND_DEEP_SELF": "basic-bar"
+  },
+  "539_EXPAND_DEEP_SELF_PRIOR": {
+    "BASIC": "basic",
+    "EXPAND_DEEP_SELF_PRIOR": "prefix2-foo-suffix2"
+  },
+  "601_EVAL": {
+    "HELLO": "world"
+  },
+  "901_LATIN1": {
+    "HELLO": "latin1"
+  },
+  "902_UTF16LE": {
+    "HELLO": "utf16le"
+  }
+}
