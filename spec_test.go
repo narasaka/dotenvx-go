@@ -14,18 +14,11 @@ var specEnv = []string{"MACHINE=machine"}
 // hasn't been ported yet, with the reason. TestSpec fails if one of them
 // starts passing, so the list can only shrink.
 var specPending = map[string]string{
-	"504_EXPAND_PARENTHESES":                       "command substitution",
-	"505_EXPAND_RETAIN_INNER_QUOTES":               "command substitution",
-	"506_EXPAND_SINGLE_QUOTES_RETAIN_INNER_QUOTES": "command substitution",
-	"601_EVAL":    "command substitution",
 	"902_UTF16LE": "UTF-16 decoding",
 }
 
 // nodePending is specPending for the goldens in testdata/node.
-var nodePending = map[string]string{
-	"eval":          "command substitution",
-	"eval/overload": "command substitution",
-}
+var nodePending = map[string]string{}
 
 func TestSpec(t *testing.T) {
 	scenarios := loadSpec(t)

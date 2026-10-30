@@ -20,3 +20,18 @@ func environ(env []string) map[string]string {
 	}
 	return m
 }
+
+// commandEnv is the environment commands run with: the existing environment
+// overlaid with the values parsed so far.
+func commandEnv(existing, parsed map[string]string) []string {
+	env := make([]string, 0, len(existing)+len(parsed))
+	for k, v := range existing {
+		if _, ok := parsed[k]; !ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	for k, v := range parsed {
+		env = append(env, k+"="+v)
+	}
+	return env
+}

@@ -20,6 +20,14 @@ type Options struct {
 	// Overload lets values from the source replace values that already
 	// exist in Env.
 	Overload bool
+
+	// DisableCommandSubstitution turns off $(command) substitution. By
+	// default, as in dotenvx, each $(command) in a value that isn't
+	// single-quoted is replaced with the output of running the command with
+	// /bin/sh. The command sees Env plus the values parsed before it. When
+	// a command fails, or there is no /bin/sh (as on Windows or in minimal
+	// container images), the value is kept as it is.
+	DisableCommandSubstitution bool
 }
 
 // Parse reads dotenv source from r and returns its values. It doesn't modify
@@ -81,8 +89,17 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 		if v, ok := existing[a.key]; ok && !o.Overload {
 			value = v
 		}
+		// Like dotenvx, evaluate a value from the environment only if the
+		// source didn't replace it.
+		evaluated := false
+		if v, ok := existing[a.key]; a.quote != '\'' && !o.DisableCommandSubstitution &&
+			strings.Contains(value, "$(") && (!ok || v == value) {
+			next := evaluate(value, commandEnv(existing, parsed))
+			evaluated = next != value
+			value = next
+		}
 		// Existing values are taken as they are, unless they are empty.
-		if a.quote != '\'' && (existing[a.key] == "" || o.Overload) {
+		if a.quote != '\'' && !evaluated && (existing[a.key] == "" || o.Overload) {
 			expanded, err := expand(value, lookup, literals)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("dotenvx: expanding %s: %w", a.key, err))
