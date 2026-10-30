@@ -27,15 +27,14 @@ govulncheck:
 test:
 	go test -race -covermode=atomic -coverprofile=cover.out ./...
 
-# Fails if any statement in the profile never ran. It reads the profile's
-# blocks rather than the total from `go tool cover -func`, because that total
-# is rounded (99.95% prints as 100.0%) and leaves out function literals that
-# sit outside named functions. A profile with no blocks means the module has
-# no statements yet. That passes for now; the first PR with code makes it fail.
+# Fails if any statement in the profile never ran, or if the profile has no
+# blocks at all. It reads the profile's blocks rather than the total from
+# `go tool cover -func`, because that total is rounded (99.95% prints as
+# 100.0%) and leaves out function literals that sit outside named functions.
 cover: test
 	@awk 'NR > 1 { stmts[$$1] = $$2; runs[$$1] += $$3 } \
 	END { \
-		if (NR <= 1) { print "coverage: no statements"; exit 0 } \
+		if (NR <= 1) { print "coverage: the profile has no blocks"; exit 1 } \
 		for (b in stmts) if (stmts[b] > 0 && runs[b] == 0) { print "not covered: " b; bad = 1 } \
 		if (!bad) print "coverage: 100% of statements"; \
 		exit bad \
