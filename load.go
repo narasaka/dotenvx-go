@@ -16,7 +16,9 @@ import (
 // dotenvx's config, a leading "~" isn't expanded and commas don't separate
 // paths. With no files, like dotenvx, Read reads the comma-separated files
 // named by DOTENV_FILE, DOTENV_PATH or DOTENV_F, the first that isn't
-// empty, or else ".env". It looks for those in the existing environment
+// empty; or else, if DOTENV_PRIVATE_KEY* variables are set, the files they
+// stand for, in the environment's order (.env.production for
+// DOTENV_PRIVATE_KEY_PRODUCTION); or else ".env". It looks for those in the existing environment
 // only: with Env set, that is Env, where dotenvx would also check the
 // process environment.
 //

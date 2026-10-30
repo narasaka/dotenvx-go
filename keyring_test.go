@@ -2,6 +2,7 @@ package dotenvx
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -113,11 +114,12 @@ func TestParseKeyProvider(t *testing.T) {
 	}
 	opts.Env = opts.Env[:len(opts.Env)-1]
 
-	// Its errors stop parsing, and its invalid keys are ignored.
+	// Its errors are returned with the values, and its invalid keys are
+	// ignored.
 	providerErr := errors.New("vault is sealed")
 	opts.KeyProvider = func(string) (string, error) { return "", providerErr }
-	if got, err := opts.Parse(strings.NewReader(encryptedSrc)); !errors.Is(err, providerErr) || got != nil {
-		t.Errorf("Parse = %q, %v; want no values and the provider's error", got, err)
+	if got, err := opts.Parse(strings.NewReader(encryptedSrc)); !errors.Is(err, providerErr) || !errors.Is(err, ErrDecryptionFailed) || got["HELLO"] != testEncrypted {
+		t.Errorf("Parse = %q, %v; want the values and the provider's error", got, err)
 	}
 	opts.KeyProvider = func(string) (string, error) { return "not a key", nil }
 	if _, err := opts.Parse(strings.NewReader(encryptedSrc)); !errors.Is(err, ErrDecryptionFailed) {
@@ -221,5 +223,104 @@ func TestReadKeyFromEarlierFile(t *testing.T) {
 	got, err := Options{Env: []string{}, KeyFiles: []string{}}.Read(keys, encrypted)
 	if err != nil || got["HELLO"] != "encrypted" {
 		t.Errorf("Read = %q, %v; want HELLO decrypted with the key from keys.env", got, err)
+	}
+}
+
+// Each case here was checked against dotenvx's parseWithDecryptor, which
+// its config uses.
+func TestParseKeyIsolation(t *testing.T) {
+	prodKey, prodPub := GenerateKeypair()
+	prod, err := Encrypt(prodPub, "prod-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	both := writeKeys(t, "OTHER=ignored\nDOTENV_PRIVATE_KEY="+testPrivateKey+"\nDOTENV_PRIVATE_KEY_PRODUCTION="+prodKey)
+	comma := writeKeys(t, "DOTENV_PRIVATE_KEY="+prodKey+","+testPrivateKey)
+	declared := encryptedSrc + "\nX=" + prod
+	undeclared := "HELLO=" + testEncrypted + "\nX=" + prod
+	otherPub := "02" + strings.Repeat("1", 64)
+	offline := func(string) (string, error) { return "", errors.New("store offline") }
+	tests := []struct {
+		name      string
+		src       string
+		opts      Options
+		wantX     string
+		wantError bool
+	}{
+		// The source declares its public key, so a key file's other keys
+		// can't decrypt it.
+		{"declared", declared, Options{Env: []string{}, KeyFiles: []string{both}}, prod, true},
+		{"declared, a list of keys", declared, Options{Env: []string{}, KeyFiles: []string{comma}}, prod, true},
+		// Keys in the environment always count.
+		{"declared, the key in the environment", declared, Options{Env: []string{"DOTENV_PRIVATE_KEY_PRODUCTION=" + prodKey}, KeyFiles: []string{both}}, "prod-secret", false},
+		// Without a declared public key, every key counts.
+		{"undeclared", undeclared, Options{Env: []string{}, KeyFiles: []string{both}}, "prod-secret", false},
+		// When the provider fails, every key counts, and its error comes
+		// back with the values.
+		{"provider failure", declared, Options{Env: []string{"DOTENV_PUBLIC_KEY_OTHER=" + otherPub}, KeyFiles: []string{both}, KeyProvider: offline}, "prod-secret", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.opts.Parse(strings.NewReader(tt.src))
+			if got["HELLO"] != "encrypted" || got["X"] != tt.wantX || (err != nil) != tt.wantError {
+				t.Errorf("Parse: HELLO = %q, X = %.20q, error %v", got["HELLO"], got["X"], err)
+			}
+		})
+	}
+}
+
+// A value that stays encrypted is neither evaluated nor expanded.
+func TestParseUndecryptedUntouched(t *testing.T) {
+	src := "B=encrypted:abc$OTHER\nC=encrypted:$(echo hi)"
+	got, err := Options{Env: []string{"OTHER=x"}, KeyFiles: []string{}}.Parse(strings.NewReader(src))
+	if want := map[string]string{"B": "encrypted:abc$OTHER", "C": "encrypted:$(echo hi)"}; !maps.Equal(got, want) || !errors.Is(err, ErrDecryptionFailed) {
+		t.Errorf("Parse = %q, %v; want %q", got, err, want)
+	}
+}
+
+func TestKeyFilesForFoldedEnv(t *testing.T) {
+	env := newEnvironment([]string{"dotenv_private_key_production=x"}, true)
+	if got := (Options{}).keyFilesFor("dir/.env.production", env); !slicesEqual(got, []string{".env.keys"}) {
+		t.Errorf("keyFilesFor = %q, want .env.keys in the current directory", got)
+	}
+	env.fold = false
+	if got := (Options{}).keyFilesFor("dir/.env.production", env); !slicesEqual(got, []string{filepath.Join("dir", ".env.keys")}) {
+		t.Errorf("without folding, keyFilesFor = %q", got)
+	}
+}
+
+func TestLoadEncrypted(t *testing.T) {
+	path := writeFile(t, t.TempDir(), ".env", encryptedSrc)
+	t.Setenv("DOTENV_PRIVATE_KEY", testPrivateKey)
+	unsetenv(t, "HELLO")
+	unsetenv(t, "DOTENV_PUBLIC_KEY")
+	if err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("HELLO"); got != "encrypted" {
+		t.Errorf("HELLO = %q, want it decrypted", got)
+	}
+}
+
+// Both of these took time quadratic in their size in an earlier version.
+func BenchmarkParseEncrypted(b *testing.B) {
+	var undecryptable, declared strings.Builder
+	for i := range 20000 {
+		fmt.Fprintf(&undecryptable, "K%d=encrypted:bad\n", i)
+		fmt.Fprintf(&declared, "DOTENV_PUBLIC_KEY_%d='%s'\n", i, testPublicKey)
+	}
+	for range 200 {
+		fmt.Fprintf(&declared, "HELLO='%s'\n", testEncrypted)
+	}
+	opts := Options{Env: []string{"DOTENV_PRIVATE_KEY=" + testPrivateKey}, KeyFiles: []string{}}
+	for _, bc := range []struct{ name, src string }{
+		{"undecryptable keys", undecryptable.String()},
+		{"declared public keys", declared.String()},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			for b.Loop() {
+				opts.Parse(strings.NewReader(bc.src))
+			}
+		})
 	}
 }

@@ -29,16 +29,29 @@ func (k *keyring) addPrivateKey(privateKey string) {
 	}
 }
 
-// newKeyring builds the keyring dotenvx would for a source that declares
-// publicKeys: those public keys; the private keys in keyFiles, where each
-// DOTENV_PRIVATE_KEY* value may list several, separated by commas; the
-// DOTENV_PUBLIC_KEY* and DOTENV_PRIVATE_KEY* values of env, whole; and what
-// the provider returns for each public key still without a private key.
-func newKeyring(publicKeys []string, env environment, keyFiles []string, provider func(string) (string, error)) (*keyring, error) {
+// newKeyring builds the keyring dotenvx's config would for a source that
+// declares publicKeys. It holds those public keys and the DOTENV_PUBLIC_KEY*
+// values of env, and the private keys of env's DOTENV_PRIVATE_KEY*
+// variables, each whole. The private keys in keyFiles, where each
+// DOTENV_PRIVATE_KEY* value may list several separated by commas, are
+// handled two ways:
+//
+//   - With restricted set, a key file only supplies the private key of a
+//     public key still without one, the first that matches, so a file's
+//     other keys can't decrypt the source. dotenvx does this for sources
+//     that declare public keys.
+//   - Otherwise, all of them are added.
+//
+// Last, the provider is asked about each public key still without a
+// private key. Its error is returned.
+func newKeyring(publicKeys []string, env environment, keyFiles []string, restricted bool, provider func(string) (string, error)) (*keyring, error) {
 	k := &keyring{keys: map[string]string{}}
 	for _, pub := range publicKeys {
 		k.add(pub, "")
 	}
+	// fromFiles holds each key-file key by its public key, the first one
+	// for each.
+	fromFiles := map[string]string{}
 	var privateKeys []string
 	for _, file := range keyFiles {
 		src, err := os.ReadFile(file)
@@ -46,8 +59,20 @@ func newKeyring(publicKeys []string, env environment, keyFiles []string, provide
 			continue
 		}
 		for _, a := range scan(decode(src)) {
-			if strings.HasPrefix(a.key, "DOTENV_PRIVATE_KEY") {
-				privateKeys = append(privateKeys, strings.Split(a.value, ",")...)
+			if !strings.HasPrefix(a.key, "DOTENV_PRIVATE_KEY") {
+				continue
+			}
+			for _, privateKey := range strings.Split(a.value, ",") {
+				pub, err := PublicKey(privateKey)
+				if err != nil {
+					continue
+				}
+				if _, ok := fromFiles[pub]; !ok {
+					fromFiles[pub] = privateKey
+				}
+				if !restricted {
+					privateKeys = append(privateKeys, privateKey)
+				}
 			}
 		}
 	}
@@ -62,17 +87,22 @@ func newKeyring(publicKeys []string, env environment, keyFiles []string, provide
 	for _, privateKey := range privateKeys {
 		k.addPrivateKey(privateKey)
 	}
-	if provider != nil {
-		for _, pub := range k.order {
-			if k.keys[pub] != "" {
-				continue
-			}
-			privateKey, err := provider(pub)
-			if err != nil {
-				return nil, err
-			}
-			k.addPrivateKey(privateKey)
+	for _, pub := range k.order {
+		if k.keys[pub] != "" {
+			continue
 		}
+		if privateKey, ok := fromFiles[pub]; ok {
+			k.add(pub, privateKey)
+			continue
+		}
+		if provider == nil {
+			continue
+		}
+		privateKey, err := provider(pub)
+		if err != nil {
+			return nil, err
+		}
+		k.addPrivateKey(privateKey)
 	}
 	return k, nil
 }
@@ -82,14 +112,16 @@ func newKeyring(publicKeys []string, env environment, keyFiles []string, provide
 // them can.
 func (k *keyring) decrypt(value string, publicKeys []string) string {
 	tried := map[string]bool{}
-	for _, pub := range append(publicKeys[:len(publicKeys):len(publicKeys)], k.order...) {
-		privateKey := k.keys[pub]
-		if privateKey == "" || tried[privateKey] {
-			continue
-		}
-		tried[privateKey] = true
-		if plaintext, err := Decrypt(privateKey, value); err == nil {
-			return plaintext
+	for _, keys := range [][]string{publicKeys, k.order} {
+		for _, pub := range keys {
+			privateKey := k.keys[pub]
+			if privateKey == "" || tried[privateKey] {
+				continue
+			}
+			tried[privateKey] = true
+			if plaintext, err := Decrypt(privateKey, value); err == nil {
+				return plaintext
+			}
 		}
 	}
 	return value

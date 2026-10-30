@@ -109,3 +109,25 @@ func ExampleGenerateKeypair() {
 	fmt.Println(len(privateKey), len(publicKey))
 	// Output: 64 66
 }
+
+func ExampleOptions_keyProvider() {
+	// A provider looks private keys up by public key, for example in a key
+	// store. This one knows the key of testdata/encrypted.
+	keys := map[string]string{
+		"03eaf2142ab3d55bdf108962334e06696db798e7412cfc51d75e74b4f87f299bba": "ec9e80073d7ace817d35acb8b7293cbf8e5981b4d2f5708ee5be405122993cd1",
+	}
+	opts := dotenvx.Options{
+		Env:      []string{},
+		KeyFiles: []string{}, // Don't read .env.keys.
+		KeyProvider: func(publicKey string) (string, error) {
+			return keys[publicKey], nil
+		},
+	}
+	values, err := opts.Read("testdata/encrypted/.env")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(values["HELLO"])
+	// Output: encrypted
+}

@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"runtime"
-	"slices"
 	"strings"
 )
 
@@ -47,16 +46,24 @@ type Options struct {
 	// for .env.production), dotenvx reads .env.keys in the current
 	// directory instead, and so do they. Use an empty slice to read none.
 	//
+	// Like dotenvx's config, a source that declares its public keys, in
+	// DOTENV_PUBLIC_KEY* values, only takes the private keys of those (and
+	// of the environment's DOTENV_PUBLIC_KEY* variables) from the key
+	// files, so a value encrypted for another key in .env.keys stays
+	// encrypted. A source that declares none takes every key.
+	//
 	// Private keys also come from the DOTENV_PRIVATE_KEY* variables of the
-	// existing environment, each holding a single key.
+	// existing environment, each holding a single key, and always count.
 	KeyFiles []string
 
 	// KeyProvider, if set, is asked for the private key of each public key
 	// that has none from KeyFiles or the environment: those the source
 	// declares in its DOTENV_PUBLIC_KEY* values, and those of the
 	// environment's DOTENV_PUBLIC_KEY* variables. It returns the private key
-	// in hex, or "" if it has none. An invalid key is ignored. An error
-	// stops parsing, and is returned. It is where key stores plug in.
+	// in hex, or "" if it has none; an invalid key is ignored. It is where
+	// key stores plug in. If it returns an error, the source is parsed
+	// without it, with every key in the key files, as dotenvx does, and
+	// the error is returned with the values.
 	KeyProvider func(publicKey string) (privateKey string, err error)
 }
 
@@ -64,7 +71,13 @@ type Options struct {
 // the process environment. When a key is assigned more than once, the last
 // assignment wins.
 //
-// Values that aren't single-quoted first have each $(command) replaced
+// Values that start with "encrypted:" are decrypted first, with the keys
+// that KeyFiles, the environment and KeyProvider supply. A value that can't
+// be decrypted stays encrypted, and isn't evaluated or expanded; Parse
+// returns the values together with an error that matches
+// ErrDecryptionFailed and names the keys it couldn't decrypt.
+//
+// Values that aren't single-quoted then have each $(command) replaced
 // with the command's output, unless DisableCommandSubstitution is set.
 // Each output is inserted as it is, where the command was. dotenvx instead
 // treats it as a String.prototype.replace pattern ($$, $&, $` and $') and
@@ -127,9 +140,14 @@ func (o Options) environment() environment {
 func (o Options) parse(src string, existing environment, keyFiles []string, prefix string) (map[string]string, []string, error) {
 	assignments := scan(src)
 	declared := publicKeys(assignments)
-	ring, err := newKeyring(declared, existing, keyFiles, o.KeyProvider)
+	var errs []error
+	ring, err := newKeyring(declared, existing, keyFiles, len(declared) > 0, o.KeyProvider)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s%w", prefix, err)
+		// Like dotenvx, report the provider's error and make do without
+		// it, with every key in the key files. Without a provider, building
+		// the keyring can't fail.
+		errs = append(errs, fmt.Errorf("%s%w", prefix, err))
+		ring, _ = newKeyring(declared, existing, keyFiles, false, nil)
 	}
 	parsed := map[string]string{}
 	// literals holds the values of single-quoted assignments.
@@ -147,7 +165,7 @@ func (o Options) parse(src string, existing environment, keyFiles []string, pref
 		return v, ok
 	}
 	var keys, undecrypted []string
-	var errs []error
+	failed := map[string]bool{}
 	for _, a := range assignments {
 		value := a.value
 		current, exists := existing.get(a.key)
@@ -156,7 +174,8 @@ func (o Options) parse(src string, existing environment, keyFiles []string, pref
 		}
 		if isEncrypted(value) {
 			value = ring.decrypt(value, declared)
-			if isEncrypted(value) && !slices.Contains(undecrypted, a.key) {
+			if isEncrypted(value) && !failed[a.key] {
+				failed[a.key] = true
 				undecrypted = append(undecrypted, a.key)
 			}
 		}
