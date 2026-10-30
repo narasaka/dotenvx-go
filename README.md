@@ -68,12 +68,17 @@ Encrypt a `.env` with the dotenvx CLI:
 dotenvx encrypt
 ```
 
-That replaces each value with `encrypted:…`, except for keys ending in
-`_PLAIN` and keys a `Dotenvxfile` stores as plaintext, and writes the
-private key to `.env.keys`, which you keep out of version control. `Load` finds `.env.keys`
-next to each file, except that, as in dotenvx, it reads `.env.keys` in the
-current directory when the file's own key variable is already set
-(`DOTENV_PRIVATE_KEY_PRODUCTION` for `.env.production`).
+That replaces each value with `encrypted:…`, except for keys a
+`Dotenvxfile` stores as plaintext and, unless it says otherwise, keys ending
+in `_PLAIN`. It then asks where to keep the private key (in CI or without a
+terminal it uses `.env.keys` without asking). Choose the `.env.keys` file and
+keep it out of version control: this library doesn't read key stores, so a
+key kept in one has to be set as `DOTENV_PRIVATE_KEY` or come through
+`Options.KeyProvider`.
+
+`Load` finds `.env.keys` next to each file, except that, as in dotenvx, it
+reads `.env.keys` in the current directory when the file's own key variable
+is already set (`DOTENV_PRIVATE_KEY_PRODUCTION` for `.env.production`).
 `Options.KeyFiles` names the key files explicitly. In production, set only
 the private key:
 
@@ -139,11 +144,12 @@ tools and tests.
 ## What it doesn't do
 
 dotenvx's own `config()` does more than load values. It checks the loaded
-values against `Dotenvxfile` policies (required keys, types, `strict`
-failures), redacts secrets from the program's output as those policies say,
-by patching Node's output streams, and it can get keys from key stores (1Password,
-Bitwarden, the system keychain, dotenvx Armor). This port does none of that,
-and doesn't print dotenvx's inject summary either.
+values against `Dotenvxfile` policies (required keys, types, allowed values
+and ranges, failing hard under `strict`), redacts secrets from the program's
+output as those policies say, by patching Node's output streams, and it can
+get keys from key stores (1Password, Bitwarden, the system keychain, dotenvx
+Armor). This port does none of that, and doesn't print dotenvx's inject
+summary either.
 
 A Go library can't redact output reliably anyway: writes straight to file
 descriptors 1 and 2, cgo and child processes would get past it. That's what
@@ -158,7 +164,7 @@ As in dotenvx, `KEY=$(command)` runs the command with `/bin/sh` while
 loading, and so does an existing value of a key the file sets (single-quoted
 values such as `KEY='$(command)'` are never run). That's surprising in a
 library, and on Windows or in minimal container images, where there is no
-`/bin/sh`, the value is kept as it is, so it can be turned off:
+`/bin/sh`, the value is kept as it is. It can be turned off:
 
 ```go
 dotenvx.Options{DisableCommandSubstitution: true}.Load()
