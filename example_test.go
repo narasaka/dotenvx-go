@@ -1,7 +1,11 @@
 package dotenvx_test
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"log"
+	"os"
 	"strings"
 
 	"github.com/narasaka/dotenvx-go"
@@ -33,4 +37,36 @@ EXISTING=from the file
 	// on two lines
 	// from the environment
 	// from the file
+}
+
+func ExampleOptions_Read() {
+	// Files are read in order, and the first to set a key wins, so the
+	// local override comes first. The later file sees its values.
+	values, err := dotenvx.Options{Env: []string{}}.Read("testdata/load/.env.local", "testdata/load/.env")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(values["HELLO"])
+	fmt.Println(values["GREETING"])
+	// Output:
+	// local
+	// Hello, local
+}
+
+func ExampleLoad() {
+	// Load .env from the current directory, if there is one, keeping
+	// variables that are already set.
+	if err := dotenvx.Load(".env"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Fatal(err)
+	}
+	fmt.Println(os.Getenv("HELLO"))
+}
+
+func ExampleOverload() {
+	// Overload replaces variables that are already set, and .env.local,
+	// read last, wins over .env.
+	if err := dotenvx.Overload(".env", ".env.local"); err != nil {
+		log.Fatal(err)
+	}
 }
