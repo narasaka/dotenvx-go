@@ -1,9 +1,11 @@
 package dotenvx
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Options configures how dotenv source is resolved. The zero value is ready
@@ -24,6 +26,26 @@ type Options struct {
 // the process environment. When a key is assigned more than once, the last
 // assignment wins.
 //
+// Values that aren't single-quoted have their $NAME and ${NAME} references
+// expanded, as do ${NAME:-default}, ${NAME-default}, ${NAME:+alternative}
+// and ${NAME+alternative}, the way dotenvx expands them. Names resolve to
+// existing values first, then to values parsed earlier, or the other way
+// round with Overload. A backslash keeps a "$" from starting a reference.
+// Existing values that aren't empty are used as they are, unexpanded.
+//
+// Expansion differs from dotenvx where dotenvx relies on accidents of
+// JavaScript: a value is inserted as it is, even if it contains "$$" or
+// "$&"; the reference that matched is the one replaced, even if an escaped
+// copy of it comes first; and names containing "null", or naming properties
+// of Object.prototype, resolve like any other. Where dotenvx would loop
+// forever, because a variable refers back to itself, Parse leaves the
+// rest of that value unexpanded and returns its values with an error that
+// wraps ErrReferenceCycle. It does that as soon as a reference that came
+// entirely from a variable's value would insert that value again, which
+// also stops a few contrived inputs that dotenvx finishes. A value that
+// would take more than 10,000 substitutions of values containing "$", or
+// grow past 16 MiB, stops the same way, with ErrExpansionLimit.
+//
 // The source is read as UTF-8. Bytes that aren't valid UTF-8 are kept as
 // they are, where dotenvx, which only sees decoded text, would have replaced
 // them with U+FFFD. Keys such as constructor or __proto__, which make
@@ -39,14 +61,40 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 	}
 	existing := environ(env)
 	parsed := map[string]string{}
+	// literals holds the values of single-quoted assignments.
+	literals := map[string]string{}
+	// lookup resolves a reference: existing values win, unless overloading.
+	lookup := func(name string) (string, bool) {
+		first, second := existing, parsed
+		if o.Overload {
+			first, second = parsed, existing
+		}
+		if v, ok := first[name]; ok {
+			return v, true
+		}
+		v, ok := second[name]
+		return v, ok
+	}
+	var errs []error
 	for _, a := range scan(string(src)) {
 		value := a.value
 		if v, ok := existing[a.key]; ok && !o.Overload {
 			value = v
 		}
+		// Existing values are taken as they are, unless they are empty.
+		if a.quote != '\'' && (existing[a.key] == "" || o.Overload) {
+			expanded, err := expand(value, lookup, literals)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("dotenvx: expanding %s: %w", a.key, err))
+			}
+			value = strings.ReplaceAll(expanded, `\$`, "$")
+		}
+		if a.quote == '\'' {
+			literals[a.key] = value
+		}
 		parsed[a.key] = value
 	}
-	return parsed, nil
+	return parsed, errors.Join(errs...)
 }
 
 // Parse reads dotenv source from r with the default Options.

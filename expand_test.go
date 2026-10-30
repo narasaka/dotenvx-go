@@ -1,0 +1,375 @@
+package dotenvx
+
+import (
+	"errors"
+	"fmt"
+	"maps"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
+type parseCase struct {
+	name     string
+	src      string
+	env      []string
+	overload bool
+	want     map[string]string
+}
+
+func (tt parseCase) run(t *testing.T) {
+	t.Helper()
+	got, err := Options{Env: append([]string{}, tt.env...), Overload: tt.overload}.Parse(strings.NewReader(tt.src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(got, tt.want) {
+		t.Errorf("Parse(%q) = %q, want %q", tt.src, got, tt.want)
+	}
+}
+
+// Every case here was checked against @dotenvx/primitives 4.3.0.
+func TestParseExpansion(t *testing.T) {
+	tests := []parseCase{
+		{name: "simple", src: "A=a\nB=$A", want: map[string]string{"A": "a", "B": "a"}},
+		{name: "braced", src: "A=a\nB=${A}", want: map[string]string{"A": "a", "B": "a"}},
+		{name: "adjacent", src: "A=a\nB=b\nC=$A$B${A}${B}x", want: map[string]string{"A": "a", "B": "b", "C": "ababx"}},
+		{name: "undefined is empty", src: "B=[$A][${A}]", want: map[string]string{"B": "[][]"}},
+		{name: "progressive (and $A3 is the name A3)", src: "A=1\nA=${A}2\nA=$A3\nB=1\nB=${B}2\nB=${B}3", want: map[string]string{"A": "", "B": "123"}},
+		{name: "self reference", src: "A=$A", want: map[string]string{"A": ""}},
+		{name: "later keys are not visible", src: "B=$A\nA=a", want: map[string]string{"A": "a", "B": ""}},
+		{name: "default operators when set", src: "A=x\nB=${A:-y}|${A:+z}|${A-w}|${A+v}", want: map[string]string{"A": "x", "B": "x|z|x|v"}},
+		{name: "default operators when unset", src: "B=${U:-1}|${U:+2}|${U-3}|${U+4}", want: map[string]string{"B": "1||3|"}},
+		{name: "default operators when empty", src: "E=\nB=${E:-y}|${E:+z}|${E-w}|${E+v}", want: map[string]string{"E": "", "B": "y|||v"}},
+		{name: "first operator wins", src: "B=${A-b:-c}|${A:-b-c}|${A:-}|${A-}", want: map[string]string{"B": "b:-c|b-c||"}},
+		{name: "nested defaults", src: "B=${U:-${V:-${W:-deep}}}", want: map[string]string{"B": "deep"}},
+		{name: "braced names are taken literally", src: "A.B=dot\nB=${A.B}|${ A }|${1}", want: map[string]string{"A.B": "dot", "B": "dot||"}},
+		{name: "unbraced names stop at other characters", src: "A=a\nB=$A.b|$A-b|$1|$|$$", want: map[string]string{"A": "a", "B": "a.b|a-b|$1|$|$$"}},
+		{name: "stray closing brace", src: "A=a\nB=${A}}", want: map[string]string{"A": "a", "B": "a}"}},
+		{name: "unterminated brace", src: "A=a\nB=${A", want: map[string]string{"A": "a", "B": "${A"}},
+		{name: "escaped dollar", src: "A=a\nB=\\$A|\\${A}", want: map[string]string{"A": "a", "B": "$A|${A}"}},
+		{name: "escaped and unescaped reference", src: "A=a\nB=$A|\\${A}", want: map[string]string{"A": "a", "B": "a|${A}"}},
+		{name: "escaped backslash still escapes", src: "A=v\nB=\\\\$A", want: map[string]string{"A": "v", "B": "\\$A"}},
+		{name: "double quotes expand", src: "A=a\nB=\"x $A\"", want: map[string]string{"A": "a", "B": "x a"}},
+		{name: "backticks expand", src: "A=a\nB=`x $A`", want: map[string]string{"A": "a", "B": "x a"}},
+		{name: "single quotes do not expand", src: "A=a\nB='x $A \\$A'", want: map[string]string{"A": "a", "B": "x $A \\$A"}},
+		{name: "single-quoted reference stays literal", src: "A='$C'\nC=c\nD=${A}", want: map[string]string{"A": "$C", "C": "c", "D": "$C"}},
+		{name: "expansion stops after a literal with references", src: "A='$C'\nC=c\nD=x${A}y$C", want: map[string]string{"A": "$C", "C": "c", "D": "x$Cy$C"}},
+		{name: "a stale literal still stops expansion", src: "A='$X'\nA=plain\nD=$A$D2", want: map[string]string{"A": "plain", "D": "plain$D2"}},
+		{name: "single-quoted value without references", src: "A='a'\nC=c\nD=$A$C", want: map[string]string{"A": "a", "C": "c", "D": "ac"}},
+		{name: "environment value is used", src: "B=$A", env: []string{"A=env"}, want: map[string]string{"B": "env"}},
+		{name: "environment beats the file", src: "A=file\nB=$A", env: []string{"A=env"}, want: map[string]string{"A": "env", "B": "env"}},
+		{name: "overload: the file beats the environment", src: "A=file\nB=$A", env: []string{"A=env"}, overload: true, want: map[string]string{"A": "file", "B": "file"}},
+		{name: "existing values are not expanded", src: "A=file", env: []string{"A=$B", "B=b"}, want: map[string]string{"A": "$B"}},
+		{name: "existing empty values are expanded", src: "A=$B", env: []string{"A=", "B=b"}, want: map[string]string{"A": ""}},
+		{name: "overload expands the file value", src: "A=$B", env: []string{"A=$C", "B=b"}, overload: true, want: map[string]string{"A": "b"}},
+		{name: "references inside an environment value expand", src: "A=x$B", env: []string{"B=$C", "C=c"}, want: map[string]string{"A": "xc"}},
+		{name: "a value that becomes a variable's value stops", src: "A=$B", env: []string{"B=$C", "C=c"}, want: map[string]string{"A": "$C"}},
+		{name: "defaults with special characters", src: "B=${U:-/default/path:with/colon}", want: map[string]string{"B": "/default/path:with/colon"}},
+		{name: "default containing a reference", src: "C=c\nB=${U:-$C}", want: map[string]string{"C": "c", "B": "c"}},
+		{name: "many references", src: "A=1\nB=" + strings.Repeat("$A", 150), want: map[string]string{"A": "1", "B": strings.Repeat("1", 150)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
+	}
+}
+
+// Node expands with String.prototype.replace and String.prototype.split,
+// and these cases hit their JavaScript-specific behaviour. The port does
+// what the Rust implementation of dotenvx does instead: it replaces the
+// reference it matched with the referenced value, as is.
+func TestParseExpansionDeviations(t *testing.T) {
+	tests := []parseCase{
+		// Node gives "xpa$wordy": "$$" in a replacement string means "$".
+		{name: "dollars in a value", src: "P='pa$$word'\nURL=x${P}y", want: map[string]string{"P": "pa$$word", "URL": "xpa$$wordy"}},
+		// Node gives "\\v v" and "\\v|v": it replaces the first occurrence
+		// of the reference's text, which is the escaped one.
+		{name: "escaped copy of a braced reference", src: "A=v\nB=\\${A} ${A}", want: map[string]string{"A": "v", "B": "${A} v"}},
+		{name: "escaped copy of a reference", src: "A=v\nB=\\$A|$A", want: map[string]string{"A": "v", "B": "$A|v"}},
+		// Node gives "|": without an operator it splits the name on the
+		// string "null" and looks up what comes before it.
+		{name: "names containing null", src: "B=${nullable}|$nullable", env: []string{"nullable=n"}, want: map[string]string{"B": "n|n"}},
+		// Node never finishes the first one and throws "Cannot convert
+		// undefined or null to object" on the second: it looks names up in a
+		// plain object, where they find the methods of Object.prototype.
+		{name: "names of Object.prototype properties", src: "B=$toString|${constructor}\nC=x${hasOwnProperty:-d}", want: map[string]string{"B": "|", "C": "xd"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
+	}
+}
+
+// These expand fully in Node, so a guard against cycles mustn't stop them.
+// Every case here was checked against @dotenvx/primitives 4.3.0.
+func TestParseExpansionWithoutCycles(t *testing.T) {
+	chain := []string{"B101=done"}
+	for i := range 101 {
+		chain = append(chain, fmt.Sprintf("B%d=$B%d", i, i+1))
+	}
+	tests := []parseCase{
+		{name: "references to a dollar", src: "A=" + strings.Repeat("$B|", 100) + "$B", env: []string{"B=$"}, want: map[string]string{"A": strings.Repeat("$|", 100) + "$"}},
+		{name: "defaults of a dollar", src: "A=" + strings.Repeat("${U:-$}|", 100) + "${U:-$}", want: map[string]string{"A": strings.Repeat("$|", 100) + "$"}},
+		{name: "references to values with references", src: "A=" + strings.Repeat("${B}|", 100), env: []string{"B=$Z", "Z=z"}, want: map[string]string{"A": strings.Repeat("z|", 100)}},
+		{name: "a long chain", src: "A=x$B0", env: chain, want: map[string]string{"A": "xdone"}},
+		{name: "a self-reference that resolves to its alternative", src: "B=y${A}", env: []string{"A=${A+z}"}, want: map[string]string{"B": "yz"}},
+		{name: "a self-reference that resolves to nothing", src: "B=y${A}${A:-q}", env: []string{"A=${A:+}"}, want: map[string]string{"B": "y"}},
+		// References assembled from a substituted value and the text after it.
+		{name: "a dollar followed by a name", src: "A=x${D}D", env: []string{"D=$"}, want: map[string]string{"A": "x$"}},
+		{name: "text and a dollar followed by a name", src: "A=x${D}D", env: []string{"D=foo$"}, want: map[string]string{"A": "xfoofoo$"}},
+		{name: "a dollar followed by a braced name", src: "A=x${D}{D}", env: []string{"D=$"}, want: map[string]string{"A": "x$"}},
+		{name: "a dollar followed by a substituted name", src: "A=${L}${M}", env: []string{"L=$", "M=L"}, want: map[string]string{"A": "$"}},
+		{name: "text, a dollar and a substituted name", src: "A=x${L}${M}", env: []string{"L=$", "M=L"}, want: map[string]string{"A": "x$"}},
+		// Multibyte values followed by other references and defaults.
+		{name: "accented", src: "B=\u00e9\nC=ok\nA=${B}${C}", want: map[string]string{"B": "\u00e9", "C": "ok", "A": "\u00e9ok"}},
+		{name: "Japanese", src: "B=\u65e5\u672c\u8a9e\nA=${B}/${B}", want: map[string]string{"B": "\u65e5\u672c\u8a9e", "A": "\u65e5\u672c\u8a9e/\u65e5\u672c\u8a9e"}},
+		{name: "emoji and a default", src: "B=\U0001f600x\nA=$B$B${U:-\u00e9}$B", want: map[string]string{"B": "\U0001f600x", "A": "\U0001f600x\U0001f600x\u00e9\U0001f600x"}},
+		{name: "mixed widths", src: "B=a\u00e9\u65e5\U0001f600\nC=$B\nA=${C}${B:+\u00fc}$C", want: map[string]string{"B": "a\u00e9\u65e5\U0001f600", "C": "a\u00e9\u65e5\U0001f600", "A": "a\u00e9\u65e5\U0001f600\u00fca\u00e9\u65e5\U0001f600"}},
+		// Values without "$" don't count towards maxInsertions.
+		{name: "many references", src: "B=1\nA=" + strings.Repeat("$B|", maxInsertions+1) + strings.Repeat("$U|", maxInsertions+1), want: map[string]string{"B": "1", "A": strings.Repeat("1|", maxInsertions+1) + strings.Repeat("|", maxInsertions+1)}},
+		// dotenvx stops here because the result equals a variable's value.
+		{name: "a result equal to a value", src: "A=${L:++${B-}", env: []string{"B=$L}$B", "L="}, want: map[string]string{"A": "$L}$B"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
+	}
+}
+
+// Node loops forever on these. The port stops expanding the value where it
+// would insert a variable's value into text that came from that value, and
+// reports the cycle.
+func TestParseExpansionCycle(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+		want string
+	}{
+		{"growing", []string{"B=x$B"}, "yx$B"},
+		{"not growing", []string{"B=$B"}, "y$B"},
+		{"through another variable", []string{"B=${C}", "C=-$B"}, "y-$B"},
+		// Node finishes these two, because text around the repeated copy
+		// changes what it means. It gives "y" here: the repeated reference
+		// is discarded along with the alternative that contains it.
+		{"inside an alternative", []string{"B=$M", "M=${L:+${B}}"}, "y${L:+${B}}"},
+		// And "yxx" here: the copy's trailing $C runs into the L after it,
+		// making $CL, which is unset.
+		{"next to a name", []string{"B=x$C", "C=${B}L"}, "yx${B}L"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Options{Env: tt.env}.Parse(strings.NewReader("Z=y$B\nOTHER=$B"))
+			if !errors.Is(err, ErrReferenceCycle) {
+				t.Errorf("Parse error = %v, want ErrReferenceCycle", err)
+			}
+			if got["Z"] != tt.want {
+				t.Errorf("Z = %q, want %q", got["Z"], tt.want)
+			}
+		})
+	}
+}
+
+// Node would eventually produce these, or run out of memory with a few more
+// variables. The port gives up after maxInsertions substitutions of values
+// containing "$", or once a value grows past maxExpandedLen.
+func TestParseExpansionLimit(t *testing.T) {
+	doubling := []string{"X15=x"}
+	for i := range 15 {
+		doubling = append(doubling, fmt.Sprintf("X%d=$X%d$X%d", i, i+1, i+1))
+	}
+	// The same, defined in order in the source, needs few substitutions
+	// for each value, but the values grow.
+	src := "X0=xxxxxxxx"
+	for i := 1; i <= 30; i++ {
+		src += fmt.Sprintf("\nX%d=$X%d$X%d", i, i-1, i-1)
+	}
+	tests := []struct {
+		name string
+		opts Options
+		src  string
+	}{
+		{"substitutions", Options{Env: doubling}, "A=y$X0"},
+		{"length", Options{Env: []string{}}, src},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.opts.Parse(strings.NewReader(tt.src))
+			if !errors.Is(err, ErrExpansionLimit) {
+				t.Errorf("Parse error = %v, want ErrExpansionLimit", err)
+			}
+		})
+	}
+}
+
+func TestParseExpansionLimitBoundaries(t *testing.T) {
+	dollars := "A=" + strings.Repeat("$B|", maxInsertions)
+	exact := strings.Repeat("x", maxExpandedLen-1)
+	tests := []struct {
+		name    string
+		env     []string
+		src     string
+		want    string
+		wantErr bool
+	}{
+		// B contains "$", so each substitution of it counts.
+		{"as many substitutions as allowed", []string{"B=$"}, dollars, strings.Repeat("$|", maxInsertions), false},
+		{"one substitution more", []string{"B=$"}, dollars + "$B", strings.Repeat("$|", maxInsertions) + "$B", true},
+		{"as long as allowed", []string{"B=" + exact}, "A=y$B", "y" + exact, false},
+		{"one byte longer", []string{"B=x" + exact}, "A=y$B", "y$B", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Options{Env: append([]string{}, tt.env...)}.Parse(strings.NewReader(tt.src))
+			if errors.Is(err, ErrExpansionLimit) != tt.wantErr {
+				t.Errorf("Parse error = %v, want ErrExpansionLimit: %v", err, tt.wantErr)
+			}
+			if got["A"] != tt.want {
+				t.Errorf("A has %d bytes, want %d", len(got["A"]), len(tt.want))
+			}
+		})
+	}
+}
+
+// Substitutions that don't grow a value are fine, however long it is.
+func TestExpandLongValue(t *testing.T) {
+	long := strings.Repeat("x", maxExpandedLen+1)
+	got, err := expand(long+"$U", func(string) (string, bool) { return "", false }, nil)
+	if err != nil || got != long {
+		t.Errorf("expand = %d bytes, %v; want %d bytes, no error", len(got), err, len(long))
+	}
+}
+
+// Expanding mustn't keep intermediate values, or a copy of a name for each
+// reference, alive until it finishes.
+func TestExpandMemory(t *testing.T) {
+	const refs = 400
+	long := strings.Repeat("N", 16<<10)
+	tests := []struct {
+		name  string
+		value string
+		vars  map[string]string
+		// limit is well above what the case needs, and well below what it
+		// would keep alive with a copy per substitution (here, 400 MiB or
+		// 6 MiB).
+		limit int64
+	}{
+		{"intermediate values", strings.Repeat("x", 1<<20) + strings.Repeat("$K", refs), map[string]string{"K": "1"}, 16 << 20},
+		// Each ${K} becomes ${NNN…}, a long name that is then looked up.
+		{"long names of unset variables", strings.Repeat("${K}|", refs), map[string]string{"K": "${" + long + "}"}, 2 << 20},
+		{"long names of set variables", strings.Repeat("${K}|", refs), map[string]string{"K": "${" + long + "}", long: "1"}, 2 << 20},
+		{"distinct names", strings.Repeat("x", 1<<20) + distinctRefs(refs), distinctVars(refs), 16 << 20},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := liveHeap()
+			var during uint64
+			calls := 0
+			lookup := func(name string) (string, bool) {
+				// Measure at the lookup of the last reference.
+				if calls++; calls == 2*refs-1 || strings.HasPrefix(tt.value, "x") && calls == refs {
+					during = liveHeap()
+				}
+				v, ok := tt.vars[name]
+				return v, ok
+			}
+			if _, err := expand(tt.value, lookup, nil); err != nil {
+				t.Fatal(err)
+			}
+			if growth := int64(during) - int64(before); growth > tt.limit {
+				t.Errorf("live heap grew %d KiB during %d substitutions", growth>>10, refs)
+			}
+		})
+	}
+}
+
+func distinctRefs(n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "${K%d}", i)
+	}
+	return b.String()
+}
+
+func distinctVars(n int) map[string]string {
+	vars := map[string]string{}
+	for i := range n {
+		vars[fmt.Sprintf("K%d", i)] = "1"
+	}
+	return vars
+}
+
+// Finding a reference's common origin must not cost its length times the
+// depth of its origins. Here a 1 MiB value 9,000 substitutions deep is the
+// default of a reference that starts in the source.
+func TestExpandDeepOrigins(t *testing.T) {
+	const depth = 9000
+	vars := map[string]string{"SET": "s", fmt.Sprint("B", depth): strings.Repeat("x", 1<<20)}
+	for i := range depth {
+		vars[fmt.Sprint("B", i)] = fmt.Sprintf("${B%d}", i+1)
+	}
+	lookup := func(name string) (string, bool) {
+		v, ok := vars[name]
+		return v, ok
+	}
+	start := time.Now()
+	got, err := expand("a${SET:-${B0}}", lookup, nil)
+	if err != nil || got != "as" {
+		t.Errorf("expand = %q, %v; want %q", got, err, "as")
+	}
+	// Linear work takes well under a second, even with -race. Quadratic
+	// work takes minutes.
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("expand took %v", elapsed)
+	}
+}
+
+// common must cost the length of the reference and how far its bytes'
+// chains part, not the depth of those chains.
+func TestOriginsCommonDepth(t *testing.T) {
+	const depth, calls = 100000, 100000
+	o := newOrigins(0)
+	for i := range depth {
+		o.insert(0, len(o.bytes), 2, fmt.Sprint("N", i), int32(i))
+	}
+	leaf := int32(len(o.nodes) - 1)
+	// A sibling of the leaf, as when a reference's "$" and name come from
+	// two values inserted next to each other.
+	o.insert(1, 2, 1, "S", leaf-1)
+	start := time.Now()
+	for range calls {
+		if got := o.common(0, 1); got != leaf {
+			t.Fatalf("common of one byte = %d, want %d", got, leaf)
+		}
+		if got := o.common(0, 2); got != leaf-1 {
+			t.Fatalf("common of siblings = %d, want %d", got, leaf-1)
+		}
+	}
+	// Linear work takes milliseconds, even with -race. Walking the chains
+	// to the source on each call takes minutes.
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("%d calls took %v", 2*calls, elapsed)
+	}
+}
+
+func liveHeap() uint64 {
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.HeapAlloc
+}
+
+func BenchmarkExpand(b *testing.B) {
+	lookup := func(string) (string, bool) { return "1", true }
+	for _, bc := range []struct{ name, value string }{
+		{"no references", strings.Repeat("x", 1<<20)},
+		{"many references", strings.Repeat("$A", 8000)},
+		{"many references to dollars", strings.Repeat("${A:-$}", 2000)},
+		{"an unclosed brace before many references", "${" + strings.Repeat("x$A", 5000)},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				expand(bc.value, lookup, nil)
+			}
+		})
+	}
+}
