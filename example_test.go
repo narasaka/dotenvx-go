@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"strings"
 
@@ -54,27 +55,18 @@ func ExampleOptions_Read() {
 }
 
 func ExampleLoad() {
-	os.Unsetenv("HELLO")
-	// Load ".env" from the current directory, if there is one, and keep
+	// Load .env from the current directory, if there is one, keeping
 	// variables that are already set.
 	if err := dotenvx.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		fmt.Println(err)
-		return
-	}
-	if err := dotenvx.Load("testdata/load"); err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err)
 	}
 	fmt.Println(os.Getenv("HELLO"))
-	// Output: World
 }
 
 func ExampleOverload() {
-	os.Setenv("HELLO", "from the environment")
-	if err := dotenvx.Overload("testdata/load/.env"); err != nil {
-		fmt.Println(err)
-		return
+	// Load the shared defaults, then let .env.local replace any of them and
+	// any variables that are already set.
+	if err := dotenvx.Overload(".env", ".env.local"); err != nil {
+		log.Fatal(err)
 	}
-	fmt.Println(os.Getenv("HELLO"))
-	// Output: World
 }

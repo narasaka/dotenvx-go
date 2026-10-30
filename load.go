@@ -12,9 +12,11 @@ import (
 
 // Read reads the given env files and returns their values without
 // modifying the process environment. A file that is a directory stands for
-// the .env in it. With no files, like dotenvx, Read reads the
-// comma-separated files named by DOTENV_FILE, DOTENV_PATH or DOTENV_F in
-// the existing environment, the first that is set, or else ".env".
+// the .env in it. Paths are used as given: unlike the path option of
+// dotenvx's config, a leading "~" isn't expanded and commas don't separate
+// paths. With no files, like dotenvx, Read reads the comma-separated files
+// named by DOTENV_FILE, DOTENV_PATH or DOTENV_F in the existing
+// environment, the first that is set, or else ".env".
 //
 // Files are read in order, and each one sees the values set by the files
 // before it as existing values. So unless Overload is set, the first file to
@@ -63,20 +65,24 @@ func (o Options) read(files []string, env environment) (map[string]string, []set
 	return values, settings, errors.Join(errs...)
 }
 
-// defaultFiles returns the files to read when none are given.
+// defaultFiles returns the files to read when none are given. Like
+// dotenvx, it looks the names up case-sensitively, even on Windows.
 func defaultFiles(env environment) []string {
+	var files []string
 	for _, name := range []string{"DOTENV_FILE", "DOTENV_PATH", "DOTENV_F"} {
-		if v, _ := env.get(name); v != "" {
-			var files []string
+		if v := env.vars[name]; v != "" {
 			for _, file := range strings.Split(v, ",") {
 				if file = strings.TrimSpace(file); file != "" {
 					files = append(files, file)
 				}
 			}
-			return files
+			break
 		}
 	}
-	return []string{".env"}
+	if len(files) == 0 {
+		return []string{".env"}
+	}
+	return files
 }
 
 // Load reads env files as Read does, and sets their values in the process

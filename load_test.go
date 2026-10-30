@@ -70,6 +70,9 @@ func TestReadDefaultFile(t *testing.T) {
 	writeFile(t, dir, ".env", "DOTENVX_GO_TEST=file")
 	t.Chdir(dir)
 	unsetenv(t, "DOTENVX_GO_TEST")
+	for _, name := range []string{"DOTENV_FILE", "DOTENV_PATH", "DOTENV_F"} {
+		unsetenv(t, name)
+	}
 	got, err := Read()
 	if err != nil {
 		t.Fatal(err)
@@ -229,6 +232,8 @@ func TestReadDefaultFiles(t *testing.T) {
 	dir := t.TempDir()
 	a := writeFile(t, dir, "a.env", "A=a\nB=a")
 	b := writeFile(t, dir, "b.env", "B=b\nC=b")
+	writeFile(t, dir, ".env", "DEFAULT=1")
+	t.Chdir(dir)
 	tests := []struct {
 		name string
 		env  []string
@@ -237,10 +242,16 @@ func TestReadDefaultFiles(t *testing.T) {
 		{"DOTENV_FILE", []string{"DOTENV_FILE= " + a + " ,, " + b, "DOTENV_PATH=" + b}, map[string]string{"A": "a", "B": "a", "C": "b"}},
 		{"DOTENV_PATH", []string{"DOTENV_FILE=", "DOTENV_PATH=" + b}, map[string]string{"B": "b", "C": "b"}},
 		{"DOTENV_F", []string{"DOTENV_F=" + a}, map[string]string{"A": "a", "B": "a"}},
+		// A list without names falls back to .env, rather than to the next
+		// variable.
+		{"no names", []string{"DOTENV_FILE= , ", "DOTENV_PATH=" + b}, map[string]string{"DEFAULT": "1"}},
+		{"only commas", []string{"DOTENV_FILE=,,"}, map[string]string{"DEFAULT": "1"}},
+		// The names are case-sensitive, as in dotenvx, even on Windows.
+		{"other case", []string{"dotenv_file=" + a}, map[string]string{"DEFAULT": "1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Options{Env: tt.env}.Read()
+			got, _, err := Options{Env: tt.env}.read(nil, environment{vars: environ(tt.env), fold: true})
 			if err != nil || !maps.Equal(got, tt.want) {
 				t.Errorf("Read() = %q, %v; want %q", got, err, tt.want)
 			}

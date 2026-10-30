@@ -45,7 +45,7 @@ reports errors for.
 
 ## load
 
-`.env` and `.env.local`, written for the examples, which load them.
+`.env` and `.env.local`, written for `ExampleOptions_Read`.
 
 ## encrypted, multiple
 
