@@ -15,7 +15,7 @@ import (
 //   - \s matches more than Go's \s, including Unicode spaces and the byte
 //     order mark. jsSpace lists exactly what it matches.
 //   - In multiline mode, lines end at U+2028 and U+2029 as well as at \n
-//     (\r is gone by the time scan runs). Go's ^ and $ only know \n, so
+//     (scan removes \r before lineRE runs). Go's ^ and $ only know \n, so
 //     scan tries lineRE at each line start itself, and lineRE ends by
 //     matching the end of the input or the character that ends the line,
 //     which scan then leaves out of the match. That is equivalent to
@@ -59,18 +59,26 @@ func scan(src string) []assignment {
 	for p := 0; p >= 0; {
 		m := lineRE.FindStringSubmatchIndex(src[p:])
 		if m == nil {
+			// Had there been a match at a later line start within the run of
+			// whitespace that starts here, there would have been one here
+			// too, with the leading \s* taking the extra whitespace. So skip
+			// the whole run, which keeps blank lines from costing quadratic
+			// time.
+			p += len(src[p:]) - len(strings.TrimLeftFunc(src[p:], isJSSpace))
 			p = nextLineStart(src, p)
 			continue
 		}
+		// The submatches are the key, the raw value and the line end.
+		key, rawValue, end := m[2:4], m[4:6], m[6]
 		raw := ""
-		if m[4] >= 0 {
-			raw = src[p+m[4] : p+m[5]]
+		if rawValue[0] >= 0 {
+			raw = src[p+rawValue[0] : p+rawValue[1]]
 		}
 		value, quote := clean(raw)
-		out = append(out, assignment{key: src[p+m[2] : p+m[3]], value: value, quote: quote})
+		out = append(out, assignment{key: src[p+key[0] : p+key[1]], value: value, quote: quote})
 		// Carry on where the match ended, before the character that ended
 		// its line, as JavaScript's global matching does.
-		p += m[6]
+		p += end
 		if !isLineStart(src, p) {
 			p = nextLineStart(src, p)
 		}
@@ -83,7 +91,7 @@ func scan(src string) []assignment {
 func clean(raw string) (string, byte) {
 	value := strings.TrimFunc(raw, isJSSpace)
 	var quote byte
-	if value != "" && isQuote(value[0]) {
+	if value != "" && quoteKind(value[0]) >= 0 {
 		quote = value[0]
 	}
 	value = unquote(value)
@@ -102,16 +110,25 @@ func clean(raw string) (string, byte) {
 // Values usually span one line, or start and end with their quote, and then
 // this simply removes the surrounding quotes.
 func unquote(s string) string {
+	// The greedy match for an opening quote ends at the last quote of the
+	// same kind that ends a line, if that comes after it.
+	closing := [3]int{-1, -1, -1}
+	for i := len(s) - 1; i >= 0; i-- {
+		if k := quoteKind(s[i]); k >= 0 && closing[k] < 0 && isLineEnd(s, i+1) {
+			closing[k] = i
+		}
+	}
 	var b strings.Builder
 	last := 0
 	for p := 0; p >= 0; p = nextLineStart(s, p) {
-		if p == len(s) || !isQuote(s[p]) {
+		if p == len(s) {
 			continue
 		}
-		end := closingQuote(s, p)
-		if end < 0 {
+		k := quoteKind(s[p])
+		if k < 0 || closing[k] <= p {
 			continue
 		}
+		end := closing[k]
 		b.WriteString(s[last:p])
 		b.WriteString(s[p+1 : end])
 		last = end + 1
@@ -121,19 +138,9 @@ func unquote(s string) string {
 	return b.String()
 }
 
-// closingQuote returns the index of the last quote matching s[open] that
-// ends a line, or -1 if there is none after open.
-func closingQuote(s string, open int) int {
-	for i := len(s) - 1; i > open; i-- {
-		if s[i] == s[open] && isLineEnd(s, i+1) {
-			return i
-		}
-	}
-	return -1
-}
-
-func isQuote(c byte) bool {
-	return c == '\'' || c == '"' || c == '`'
+// quoteKind returns 0, 1 or 2 for ', " and `, and -1 for anything else.
+func quoteKind(c byte) int {
+	return strings.IndexByte("'\"`", c)
 }
 
 // isLineStart reports whether a line starts at s[p:].

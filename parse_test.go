@@ -60,7 +60,7 @@ func TestParseSyntax(t *testing.T) {
 		{"utf-8 bom", "\ufeffA=1", map[string]string{"A": "1"}},
 		{"unicode whitespace is trimmed", "A=\u00a0x\u3000", map[string]string{"A": "x"}},
 		{"vertical tab is whitespace", "A=\u000bx\u000b", map[string]string{"A": "x"}},
-		{"next line is trimmed", "A=\u0085x\u0085", map[string]string{"A": "\u0085x\u0085"}},
+		{"next line is not trimmed", "A=\u0085x\u0085", map[string]string{"A": "\u0085x\u0085"}},
 		{"tab separated", "A\t=\tx", map[string]string{"A": "x"}},
 		// JavaScript also ends lines at U+2028 and U+2029.
 		{"LS ends a quoted value", "A=\"x\"\u2028B=2", map[string]string{"A": "x", "B": "2"}},
@@ -99,6 +99,19 @@ func TestParseInvalidUTF8(t *testing.T) {
 		t.Fatal(err)
 	}
 	if want := map[string]string{"A": "\xff", "B": "\xfe"}; !maps.Equal(got, want) {
+		t.Errorf("Parse = %q, want %q", got, want)
+	}
+}
+
+// Node throws "u[p].push is not a function" for keys that name a property
+// of Object.prototype. The port parses them like any other key.
+func TestParseObjectPrototypeKeys(t *testing.T) {
+	got, err := Options{Env: []string{}}.Parse(strings.NewReader("constructor=1\n__proto__=2\ntoString=3\nhasOwnProperty=4\nvalueOf=5"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"constructor": "1", "__proto__": "2", "toString": "3", "hasOwnProperty": "4", "valueOf": "5"}
+	if !maps.Equal(got, want) {
 		t.Errorf("Parse = %q, want %q", got, want)
 	}
 }
@@ -162,5 +175,20 @@ func TestIsJSSpace(t *testing.T) {
 		if got := class.MatchString(string(r)); got != want[r] && utf8.ValidRune(r) {
 			t.Errorf("jsSpace matches %U = %v", r, got)
 		}
+	}
+}
+
+// The pathological cases took quadratic time in earlier versions of scan.
+func BenchmarkScan(b *testing.B) {
+	for _, bc := range []struct{ name, src string }{
+		{"typical", strings.Repeat("KEY=value # comment\nQUOTED=\"a b\nc\"\n\n", 1000)},
+		{"blank lines", strings.Repeat("\n", 32000)},
+		{"unmatched quotes after separators", "A=x" + strings.Repeat("\u2028\"z", 16000)},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			for b.Loop() {
+				scan(bc.src)
+			}
+		})
 	}
 }

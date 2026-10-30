@@ -26,7 +26,8 @@ type Options struct {
 //
 // The source is read as UTF-8. Bytes that aren't valid UTF-8 are kept as
 // they are, where dotenvx, which only sees decoded text, would have replaced
-// them with U+FFFD.
+// them with U+FFFD. Keys such as constructor or __proto__, which make
+// dotenvx throw, are parsed like any other key.
 func (o Options) Parse(r io.Reader) (map[string]string, error) {
 	src, err := io.ReadAll(r)
 	if err != nil {
