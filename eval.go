@@ -2,30 +2,33 @@ package dotenvx
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
-// maxOutput is the most output a command may write. Like execSync's
-// default maxBuffer, more counts as a failure.
+// maxOutput is the most a command may write to stdout and stderr together.
+// Like execSync's default maxBuffer, more counts as a failure.
 const maxOutput = 1 << 20
 
 // evaluate replaces each $(command) in value with the command's output,
 // minus trailing newlines. Commands run with /bin/sh -c, as Node's execSync
 // runs them, with env as their environment. If any command fails, can't
 // run at all, or writes more than maxOutput bytes, evaluate returns value
-// unchanged, like dotenvx.
+// unchanged, like dotenvx. What commands write to stderr goes to os.Stderr.
 func evaluate(value string, env []string) string {
 	var b strings.Builder
 	last := 0
 	for _, span := range commandSpans(value) {
 		cmd := exec.Command("/bin/sh", "-c", value[span[0]+2:span[1]-1])
 		cmd.Env = env
+		budget := &outputBudget{cmd: cmd, left: maxOutput}
+		var out strings.Builder
+		cmd.Stdout = budgetWriter{budget, &out}
 		// Like execSync, let the user see what the command reports.
-		cmd.Stderr = os.Stderr
-		out := &cappedOutput{cmd: cmd}
-		cmd.Stdout = out
+		cmd.Stderr = budgetWriter{budget, os.Stderr}
 		if err := cmd.Run(); err != nil {
 			return value
 		}
@@ -39,19 +42,29 @@ func evaluate(value string, env []string) string {
 
 var errOutputTooLong = errors.New("command output too long")
 
-// cappedOutput collects a command's output, and kills the command once it
-// writes more than maxOutput bytes.
-type cappedOutput struct {
-	strings.Builder
-	cmd *exec.Cmd
+// outputBudget is what a command may still write to stdout and stderr,
+// which are copied concurrently. Overspending it kills the command.
+type outputBudget struct {
+	mu   sync.Mutex
+	left int
+	cmd  *exec.Cmd
 }
 
-func (c *cappedOutput) Write(p []byte) (int, error) {
-	if c.Len()+len(p) > maxOutput {
-		c.cmd.Process.Kill()
+// budgetWriter writes to w what fits in the budget.
+type budgetWriter struct {
+	budget *outputBudget
+	w      io.Writer
+}
+
+func (b budgetWriter) Write(p []byte) (int, error) {
+	b.budget.mu.Lock()
+	defer b.budget.mu.Unlock()
+	if len(p) > b.budget.left {
+		b.budget.cmd.Process.Kill()
 		return 0, errOutputTooLong
 	}
-	return c.Builder.Write(p)
+	b.budget.left -= len(p)
+	return b.w.Write(p)
 }
 
 // commandSpans returns the start and end of each $(command) in s.

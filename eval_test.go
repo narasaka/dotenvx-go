@@ -1,6 +1,7 @@
 package dotenvx
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -36,21 +37,51 @@ func TestParseCommandSubstitution(t *testing.T) {
 	}
 }
 
-// Node substitutes command output with String.prototype.replace, so "$&" in
-// the output becomes the command itself: "x$(printf %s \"x$&y\")y". The port
-// inserts the output as it is.
+// Node substitutes each command's output with String.prototype.replace,
+// which treats the output as a replacement pattern and replaces the first
+// copy of the command's text, wherever it is. The port inserts each output
+// as it is, where the command was.
 func TestParseCommandSubstitutionDeviations(t *testing.T) {
-	parseCase{src: `A=$(printf %s "x$&y")`, want: map[string]string{"A": "x$&y"}}.run(t)
+	tests := []parseCase{
+		// Node gives "x$(printf %s \"x$&y\")y" and "x$y".
+		{name: "$&", src: `A=$(printf %s "x$&y")`, want: map[string]string{"A": "x$&y"}},
+		{name: "$$", src: `A=$(printf %s 'x$$y')`, want: map[string]string{"A": "x$$y"}},
+		// Node gives "b$(echo b)": it replaces the copy of $(echo b) that the
+		// first command printed.
+		{name: "output containing a later command", src: `A=$(printf %s '$(echo b)')$(echo b)`, want: map[string]string{"A": "$(echo b)b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
+	}
 }
 
-// Node's execSync treats output over 1 MiB as a failure, which keeps the
-// value as it is.
+// As in Node, a command's output includes what a child it leaves running in
+// the background writes, until the child exits.
+func TestParseCommandBackgroundChild(t *testing.T) {
+	parseCase{src: "A=$( (sleep 0.2; echo late) & echo now)", want: map[string]string{"A": "now\nlate"}}.run(t)
+}
+
+// Node's execSync treats more than 1 MiB of output, on stdout and stderr
+// together, as a failure, which keeps the value as it is.
 func TestParseCommandOutputLimit(t *testing.T) {
+	// Keep the stderr of these commands out of the test output.
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devNull.Close()
+	stderr := os.Stderr
+	os.Stderr = devNull
+	defer func() { os.Stderr = stderr }()
+
 	tests := []struct {
 		name, src, want string
 	}{
 		{"1 MiB", "A=$(printf %01048576d 0)", strings.Repeat("0", 1<<20)},
 		{"more", "A=$(printf %01048577d 0)", "$(printf %01048577d 0)"},
+		{"1 MiB with stderr", "A=$(printf hi; printf %01048574d 0 >&2)", "hi"},
+		{"more with stderr", "A=$(printf hi; printf %01048575d 0 >&2)", "$(printf hi; printf %01048575d 0 >&2)"},
+		{"more on stderr alone", "A=$(printf %01048577d 0 >&2)", "$(printf %01048577d 0 >&2)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

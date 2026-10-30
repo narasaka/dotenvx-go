@@ -24,9 +24,12 @@ type Options struct {
 	// DisableCommandSubstitution turns off $(command) substitution. By
 	// default, as in dotenvx, each $(command) in a value that isn't
 	// single-quoted is replaced with the output of running the command with
-	// /bin/sh. The command sees Env plus the values parsed before it. When
-	// a command fails, or there is no /bin/sh (as on Windows or in minimal
-	// container images), the value is kept as it is.
+	// /bin/sh. That includes the existing value of a key the source
+	// assigns, unless Overload is set. The command sees Env plus the values
+	// parsed before it. When a command fails, writes more than 1 MiB to
+	// stdout and stderr together, or can't run because there is no /bin/sh
+	// (as on Windows or in minimal container images), the value is kept as
+	// it is.
 	DisableCommandSubstitution bool
 }
 
@@ -35,9 +38,12 @@ type Options struct {
 // assignment wins.
 //
 // Values that aren't single-quoted first have each $(command) replaced
-// with the command's output, unless DisableCommandSubstitution is set. The
-// output is inserted as it is, where dotenvx would turn "$&" in it into the
-// command's text and invalid UTF-8 into U+FFFD.
+// with the command's output, unless DisableCommandSubstitution is set.
+// Each output is inserted as it is, where the command was. dotenvx instead
+// treats it as a String.prototype.replace pattern ($$, $&, $` and $') and
+// replaces the first copy of the command's text, which may be in an
+// earlier command's output; it also turns invalid UTF-8 into U+FFFD, and
+// runs commands with cmd.exe on Windows rather than /bin/sh.
 //
 // Values that aren't single-quoted, and had no command substituted, then
 // have their $NAME and ${NAME} references expanded, as do
@@ -45,7 +51,8 @@ type Options struct {
 // ${NAME+alternative}, the way dotenvx expands them. Names resolve to
 // existing values first, then to values parsed earlier, or the other way
 // round with Overload. A backslash keeps a "$" from starting a reference.
-// Existing values that aren't empty are used as they are, unexpanded.
+// Existing values that aren't empty aren't expanded, though they do go
+// through command substitution.
 //
 // Expansion differs from dotenvx where dotenvx relies on accidents of
 // JavaScript: a value is inserted as it is, even if it contains "$$" or
