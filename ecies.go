@@ -46,6 +46,11 @@ func isEncrypted(value string) bool {
 // outside ASCII in the base64, which Node reads by the low byte of their
 // UTF-16 code units. And it returns plaintext that isn't valid UTF-8 as it
 // is, where dotenvx gives U+FFFD.
+//
+// Decrypt isn't constant-time: how long it takes depends slightly on the
+// private key, which someone who can time many calls could use to work out
+// the key. That doesn't matter for decrypting your own files, but don't
+// call it on values that others can send to a long-running program.
 func Decrypt(privateKey, value string) (string, error) {
 	data, ok := strings.CutPrefix(value, encryptedPrefix)
 	if !ok {
