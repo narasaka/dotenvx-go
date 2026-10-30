@@ -1,4 +1,6 @@
-// Writes vectors.json: values encrypted by @dotenvx/primitives for fixed keys.
+// Writes vectors.json: values encrypted by @dotenvx/primitives for a fixed
+// key. Then checks that Node decrypts go_vectors.json, which encrypt.go
+// writes with this port.
 //   node generate.js path/to/node_modules/@dotenvx/primitives
 const fs = require('fs')
 const path = require('path')
@@ -11,3 +13,8 @@ const plaintexts = ['', 'a', 'hello world', 'héllo wörld ✓ 𝄞', 'x'.repeat
 const vectors = plaintexts.map(plaintext => ({ plaintext, encrypted: p.encrypt(p.derive(privateKey), plaintext) }))
 for (const v of vectors) if (p.decrypt(privateKey, v.encrypted) !== v.plaintext) throw new Error('round trip')
 fs.writeFileSync(path.join(__dirname, 'vectors.json'), JSON.stringify({ privateKey, publicKey: p.derive(privateKey), vectors }, null, 2) + '\n')
+const fromGo = JSON.parse(fs.readFileSync(path.join(__dirname, 'go_vectors.json'), 'utf8'))
+for (const v of fromGo.vectors) {
+  if (p.decrypt(fromGo.privateKey, v.encrypted) !== v.plaintext) throw new Error(`Node can't decrypt ${v.encrypted}`)
+}
+console.log(`Node decrypts all ${fromGo.vectors.length} values in go_vectors.json`)

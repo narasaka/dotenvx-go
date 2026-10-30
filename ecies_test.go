@@ -53,6 +53,21 @@ func TestDecryptFixture(t *testing.T) {
 	}
 }
 
+// Like Node's Buffer, Decrypt reads base64 with or without padding, in
+// either alphabet, across line breaks.
+func TestDecryptBase64(t *testing.T) {
+	data := strings.TrimPrefix(testEncrypted, "encrypted:")
+	for _, variant := range []string{
+		strings.TrimRight(data, "="),
+		strings.NewReplacer("+", "-", "/", "_").Replace(data),
+		data[:40] + "\n" + data[40:] + "\r\n",
+	} {
+		if got, err := Decrypt(testPrivateKey, "encrypted:"+variant); err != nil || got != "encrypted" {
+			t.Errorf("Decrypt(%q) = %q, %v", variant, got, err)
+		}
+	}
+}
+
 func TestDecryptPlaintext(t *testing.T) {
 	// Like dotenvx, values without the prefix pass through, even without a key.
 	if got, err := Decrypt("", "plain"); err != nil || got != "plain" {
@@ -98,6 +113,8 @@ func TestDecryptErrors(t *testing.T) {
 	tampered[len(tampered)-1] ^= 1
 	badPoint := append([]byte{}, payload...)
 	badPoint[1] ^= 1
+	hybrid := append([]byte{}, payload...)
+	hybrid[0] = 7
 	otherKey, _ := GenerateKeypair()
 	tests := []struct {
 		name       string
@@ -112,9 +129,12 @@ func TestDecryptErrors(t *testing.T) {
 		{"the curve order", "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", testEncrypted, ErrInvalidPrivateKey},
 		{"wrong key", otherKey, testEncrypted, ErrWrongPrivateKey},
 		{"tampered", testPrivateKey, encode(tampered), ErrWrongPrivateKey},
-		{"not base64", testPrivateKey, "encrypted:!!!", ErrMalformedEncryptedData},
-		{"too short", testPrivateKey, encode(payload[:96]), ErrMalformedEncryptedData},
-		{"not a point", testPrivateKey, encode(badPoint), ErrMalformedEncryptedData},
+		// Node gives DECRYPTION_FAILED for all of these.
+		{"empty", testPrivateKey, "encrypted:", ErrDecryptionFailed},
+		{"not base64", testPrivateKey, "encrypted:!!!", ErrDecryptionFailed},
+		{"too short", testPrivateKey, encode(payload[:96]), ErrDecryptionFailed},
+		{"not a point", testPrivateKey, encode(badPoint), ErrDecryptionFailed},
+		{"a hybrid point", testPrivateKey, encode(hybrid), ErrDecryptionFailed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,17 +159,38 @@ func TestPublicKeyErrors(t *testing.T) {
 }
 
 func TestEncryptErrors(t *testing.T) {
-	for _, key := range []string{"", "zz", testPublicKey[:64], "04" + strings.Repeat("00", 64), "02" + strings.Repeat("ff", 32)} {
+	hybrid := "07" + uncompressedHex(t, testPublicKey)[2:]
+	for _, key := range []string{"", "zz", testPublicKey[:64], "04" + strings.Repeat("00", 64), "02" + strings.Repeat("ff", 32), hybrid} {
 		if _, err := Encrypt(key, "x"); !errors.Is(err, ErrInvalidPublicKey) {
 			t.Errorf("Encrypt(%q) error = %v, want ErrInvalidPublicKey", key, err)
 		}
 	}
 }
 
+func TestEncryptHexPrefix(t *testing.T) {
+	encrypted, err := Encrypt("0x"+testPublicKey, "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Decrypt(testPrivateKey, encrypted); err != nil || got != "hi" {
+		t.Errorf("round trip = %q, %v", got, err)
+	}
+}
+
 func TestErrorIs(t *testing.T) {
 	err := &Error{Code: "WRONG_PRIVATE_KEY", Message: "something else"}
-	if !errors.Is(err, ErrWrongPrivateKey) || errors.Is(err, ErrInvalidPrivateKey) || errors.Is(err, errors.New("x")) {
+	if !errors.Is(err, ErrWrongPrivateKey) || errors.Is(err, ErrInvalidPrivateKey) || errors.Is(err, errors.New("x")) || errors.Is(err, (*Error)(nil)) {
 		t.Error("Error.Is doesn't match by code")
+	}
+	cause := errors.New("cause")
+	if !errors.Is(newError(ErrDecryptionFailed, cause), cause) {
+		t.Error("Error doesn't unwrap to its cause")
+	}
+	// Returned errors are copies, which callers may change.
+	_, err1 := Decrypt("", testEncrypted)
+	err1.(*Error).Message = "changed"
+	if _, err2 := Decrypt("", testEncrypted); err2.Error() != ErrMissingPrivateKey.Error() {
+		t.Errorf("after changing a returned error, Decrypt returns %q", err2)
 	}
 	if got := ErrWrongPrivateKey.Error(); got != "[WRONG_PRIVATE_KEY] could not decrypt using private key" {
 		t.Errorf("Error() = %q", got)

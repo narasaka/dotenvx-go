@@ -67,3 +67,5 @@ key, the private key of `encrypted/`. The plaintexts include the empty
 string, multibyte text and a 1000-byte value. Regenerate them with
 `node generate.js path/to/node_modules/@dotenvx/primitives`. Encryption is
 randomized, so each run gives different ciphertexts that decrypt the same way.
+Afterwards, it checks that Node decrypts `go_vectors.json`, which this port
+encrypted with `go run encrypt.go`, for the same key, compressed and not.
