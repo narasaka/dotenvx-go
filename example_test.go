@@ -1,6 +1,8 @@
 package dotenvx_test
 
 import (
+	"bytes"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -124,6 +126,24 @@ func ExampleOptions_keyProvider() {
 		},
 	}
 	values, err := opts.Read("testdata/encrypted/.env")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(values["HELLO"])
+	// Output: encrypted
+}
+
+//go:embed testdata/encrypted/.env
+var encryptedEnv []byte
+
+// An encrypted .env can be compiled into the binary, which then only needs
+// the private key at run time.
+func ExampleOptions_Parse_embedded() {
+	// In production, the private key would be all there is in the
+	// environment: here, it is the only entry in Env.
+	opts := dotenvx.Options{Env: []string{"DOTENV_PRIVATE_KEY=ec9e80073d7ace817d35acb8b7293cbf8e5981b4d2f5708ee5be405122993cd1"}}
+	values, err := opts.Parse(bytes.NewReader(encryptedEnv))
 	if err != nil {
 		fmt.Println(err)
 		return
