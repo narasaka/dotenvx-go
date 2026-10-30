@@ -111,7 +111,8 @@ type Options struct {
 // grow past 16 MiB, stops the same way, with ErrExpansionLimit.
 //
 // Source that starts with a UTF-16LE byte order mark is decoded from
-// UTF-16LE; anything else is read as UTF-8. Bytes that aren't valid UTF-8
+// UTF-16LE, with unpaired surrogates, which dotenvx keeps, becoming U+FFFD;
+// anything else is read as UTF-8. Bytes that aren't valid UTF-8
 // are kept as they are, where dotenvx, which only sees decoded text, would
 // have replaced them with U+FFFD. Keys such as constructor or __proto__,
 // which make dotenvx throw, are parsed like any other key.
