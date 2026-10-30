@@ -47,13 +47,13 @@ func isEncrypted(value string) bool {
 // UTF-16 code units. And it returns plaintext that isn't valid UTF-8 as it
 // is, where dotenvx gives U+FFFD.
 //
-// The library dotenvx uses is written to take the same steps whatever the
-// key; Decrypt isn't. The steps it takes depend on the private key, so
-// another process that can watch it run on the same machine, by timing it
-// or through the CPU's caches, could learn the key. That doesn't matter
-// where nothing untrusted shares the machine. PublicKey and GenerateKeypair
-// have the same weakness, Parse, Read and Load decrypt with Decrypt, and
-// Encrypt could give away the value it encrypts.
+// The library dotenvx uses is written to make timing attacks harder;
+// Decrypt isn't. The steps it takes depend on the private key, so another
+// process that can watch it run on the same machine, by timing it or
+// through the CPU's caches, could learn the key. That doesn't matter where
+// nothing untrusted shares the machine. PublicKey and GenerateKeypair have
+// the same weakness, and so does Encrypt, which could give away the value
+// it encrypts. Parse, Read, Load and Overload decrypt with Decrypt.
 func Decrypt(privateKey, value string) (string, error) {
 	data, ok := strings.CutPrefix(value, encryptedPrefix)
 	if !ok {
