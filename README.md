@@ -20,10 +20,11 @@ not `dotenvx run`. It is a community port, as [godotenv](https://github.com/joho
 is of dotenv. Use the `dotenvx` CLI to encrypt, set and edit values; this
 library only loads them. See [what it doesn't do](#what-it-doesnt-do).
 
-In the [benchmark](bench/README.md), a server loading its file in process used
-70 to 86 MiB less than under `dotenvx run`, which keeps the CLI running beside
-it, and started 0.4 s (20 values) to 3 s (200 values) sooner than under
-`dotenvx run` or `dotenvx get`.
+In the [benchmark](bench/README.md), with nothing else running dotenvx, a
+server loading its file in process used 70 to 86 MiB less than under
+`dotenvx run`, which keeps the CLI running beside it (38 to 54 MiB of that is
+memory a second `dotenvx run` couldn't share). It started 0.4 s (20 values) to
+3 s (200 values) sooner than under `dotenvx run` or `dotenvx get`.
 
 ## Install
 

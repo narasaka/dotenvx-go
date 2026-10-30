@@ -82,10 +82,11 @@ func main() {
 }
 
 func run(ctx context.Context, dotenvxBin string, runs int, settle time.Duration, jsonOut string) error {
-	if _, err := os.Stat("/proc/self/smaps_rollup"); err != nil {
-		return errors.New("needs Linux's /proc/<pid>/smaps_rollup")
+	rollup, err := os.ReadFile("/proc/self/smaps_rollup")
+	if err != nil || !strings.Contains(string(rollup), "\nPss_Anon:") {
+		return errors.New("needs Linux 5.4 or later, for Pss_Anon in /proc/<pid>/smaps_rollup")
 	}
-	dotenvxBin, err := filepath.Abs(dotenvxBin)
+	dotenvxBin, err = filepath.Abs(dotenvxBin)
 	if err != nil {
 		return err
 	}
@@ -149,6 +150,9 @@ func run(ctx context.Context, dotenvxBin string, runs int, settle time.Duration,
 		for _, s := range setups {
 			r := Result{File: filepath.Base(file), Setup: s.name, Keys: expect}
 			for range runs {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				one, err := start(ctx, s.argv, append(slices.Clone(base), s.env...), settle)
 				if err != nil {
 					return fmt.Errorf("%s with %s: %w", s.name, file, err)

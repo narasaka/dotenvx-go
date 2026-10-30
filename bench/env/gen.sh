@@ -7,7 +7,8 @@
 #   sh env/gen.sh bin/dotenvx
 set -eu
 [ $# -eq 1 ] || { echo "usage: sh gen.sh path/to/dotenvx" >&2; exit 2; }
-dotenvx=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+dir=$(cd "$(dirname "$1")" && pwd) || exit 1
+dotenvx=$dir/$(basename "$1")
 [ -x "$dotenvx" ] || { echo "$1: not an executable" >&2; exit 1; }
 env_dir=$(cd "$(dirname "$0")" && pwd)
 tmp=$(mktemp -d)
