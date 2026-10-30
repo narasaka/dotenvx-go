@@ -322,6 +322,34 @@ func TestExpandDeepOrigins(t *testing.T) {
 	}
 }
 
+// common must cost the length of the reference and how far its bytes'
+// chains part, not the depth of those chains.
+func TestOriginsCommonDepth(t *testing.T) {
+	const depth, calls = 100000, 100000
+	o := newOrigins(0)
+	for i := range depth {
+		o.insert(0, len(o.bytes), 2, fmt.Sprint("N", i), int32(i))
+	}
+	leaf := int32(len(o.nodes) - 1)
+	// A sibling of the leaf, as when a reference's "$" and name come from
+	// two values inserted next to each other.
+	o.insert(1, 2, 1, "S", leaf-1)
+	start := time.Now()
+	for range calls {
+		if got := o.common(0, 1); got != leaf {
+			t.Fatalf("common of one byte = %d, want %d", got, leaf)
+		}
+		if got := o.common(0, 2); got != leaf-1 {
+			t.Fatalf("common of siblings = %d, want %d", got, leaf-1)
+		}
+	}
+	// Linear work takes milliseconds, even with -race. Walking the chains
+	// to the source on each call takes minutes.
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("%d calls took %v", 2*calls, elapsed)
+	}
+}
+
 func liveHeap() uint64 {
 	runtime.GC()
 	var m runtime.MemStats

@@ -44,12 +44,10 @@ type origins struct {
 	// ids numbers the names seen, keyed by a copy of each, so that nothing
 	// keeps the values the names were cut from alive.
 	ids map[string]int32
-	// seen and meets support common. In its latest call, seen[n] == call
-	// for each node n it has visited, and meets[n] is the node where n's
-	// chain meets the chain of the reference's first byte.
-	seen  []int32
-	meets []int32
-	call  int32
+	// seen supports common: in its latest call, seen[n] == call for the
+	// nodes it has found to descend from its answer so far.
+	seen []int32
+	call int32
 }
 
 type originNode struct {
@@ -64,7 +62,6 @@ func newOrigins(n int) *origins {
 		nodes: []originNode{{}},
 		ids:   map[string]int32{},
 		seen:  []int32{0},
-		meets: []int32{0},
 	}
 }
 
@@ -90,36 +87,38 @@ func (o *origins) has(n int32, name string) bool {
 }
 
 // common returns the deepest node shared by the chains of bytes
-// [start:end]. It visits each node at most once, so it costs no more than
-// the length of the reference plus the number of nodes.
+// [start:end]. It climbs no further than where those chains part, and
+// visits each node at most once, so it costs no more than the length of the
+// reference plus the length of the chains below that point.
 func (o *origins) common(start, end int) int32 {
 	o.call++
-	// Mark the chain of the first byte. Each of its nodes meets it at
-	// itself.
-	first := o.bytes[start]
-	for n := first; ; n = o.nodes[n].parent {
-		o.seen[n], o.meets[n] = o.call, n
-		if n == 0 {
-			break
-		}
-	}
-	common := first
+	c := o.bytes[start]
 	for _, b := range o.bytes[start+1 : end] {
-		// Climb to a node visited before, which leads to the marked chain
-		// (the source at worst), and note where for the nodes on the way.
+		// Nodes seen in this call descend from c, which only ever moves up.
+		if b == c || o.seen[b] == o.call {
+			continue
+		}
+		// Climb from b to a node seen in this call, or to c's depth.
 		n := b
-		for o.seen[n] != o.call {
+		for o.seen[n] != o.call && o.nodes[n].depth > o.nodes[c].depth {
 			n = o.nodes[n].parent
 		}
-		meet := o.meets[n]
-		for m := b; m != n; m = o.nodes[m].parent {
-			o.seen[m], o.meets[m] = o.call, meet
+		if o.seen[n] != o.call {
+			// Climb c to the same depth, then both, until they meet.
+			for o.nodes[c].depth > o.nodes[n].depth {
+				c = o.nodes[c].parent
+			}
+			for c != n {
+				c, n = o.nodes[c].parent, o.nodes[n].parent
+			}
 		}
-		if o.nodes[meet].depth < o.nodes[common].depth {
-			common = meet
+		// Everything from b up to c, or to a node seen before, descends
+		// from c.
+		for m := b; m != c && o.seen[m] != o.call; m = o.nodes[m].parent {
+			o.seen[m] = o.call
 		}
 	}
-	return common
+	return c
 }
 
 // insert replaces bytes [start:end] with n bytes that came from the value
@@ -131,7 +130,6 @@ func (o *origins) insert(start, end, n int, name string, parent int32) {
 	}
 	o.nodes = append(o.nodes, originNode{name: o.id(name), parent: parent, depth: o.nodes[parent].depth + 1})
 	o.seen = append(o.seen, 0)
-	o.meets = append(o.meets, 0)
 	o.fill = slices.Grow(o.fill[:0], n)[:n]
 	// Fill by doubling, which copies in bulk rather than byte by byte.
 	o.fill[0] = int32(len(o.nodes) - 1)
@@ -187,10 +185,14 @@ func expand(value string, lookup func(string) (string, bool), literals map[strin
 			if o != nil {
 				parent = o.common(start, end)
 			}
-			if o != nil && o.has(parent, name) {
+			// A value without "$" can't contain a reference, so its node is
+			// never the common origin of one, and never in a chain that
+			// leads back to it: only check for a cycle when it has one.
+			hasDollar := strings.Contains(replacement, "$")
+			if hasDollar && o != nil && o.has(parent, name) {
 				return value, ErrReferenceCycle
 			}
-			if strings.Contains(replacement, "$") {
+			if hasDollar {
 				if insertions++; insertions > maxInsertions {
 					return value, ErrExpansionLimit
 				}
