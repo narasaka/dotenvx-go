@@ -43,8 +43,8 @@ type Options struct {
 // wraps ErrReferenceCycle. It does that as soon as a reference that came
 // entirely from a variable's value would insert that value again, which
 // also stops a few contrived inputs that dotenvx finishes. A value that
-// would take more than 10,000 substitutions of variables' values stops the
-// same way, with ErrExpansionLimit.
+// would take more than 10,000 substitutions of values containing "$", or
+// grow past 16 MiB, stops the same way, with ErrExpansionLimit.
 //
 // The source is read as UTF-8. Bytes that aren't valid UTF-8 are kept as
 // they are, where dotenvx, which only sees decoded text, would have replaced

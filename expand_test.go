@@ -118,6 +118,13 @@ func TestParseExpansionWithoutCycles(t *testing.T) {
 		{name: "a dollar followed by a braced name", src: "A=x${D}{D}", env: []string{"D=$"}, want: map[string]string{"A": "x$"}},
 		{name: "a dollar followed by a substituted name", src: "A=${L}${M}", env: []string{"L=$", "M=L"}, want: map[string]string{"A": "$"}},
 		{name: "text, a dollar and a substituted name", src: "A=x${L}${M}", env: []string{"L=$", "M=L"}, want: map[string]string{"A": "x$"}},
+		// Multibyte values followed by other references and defaults.
+		{name: "accented", src: "B=\u00e9\nC=ok\nA=${B}${C}", want: map[string]string{"B": "\u00e9", "C": "ok", "A": "\u00e9ok"}},
+		{name: "Japanese", src: "B=\u65e5\u672c\u8a9e\nA=${B}/${B}", want: map[string]string{"B": "\u65e5\u672c\u8a9e", "A": "\u65e5\u672c\u8a9e/\u65e5\u672c\u8a9e"}},
+		{name: "emoji and a default", src: "B=\U0001f600x\nA=$B$B${U:-\u00e9}$B", want: map[string]string{"B": "\U0001f600x", "A": "\U0001f600x\U0001f600x\u00e9\U0001f600x"}},
+		{name: "mixed widths", src: "B=a\u00e9\u65e5\U0001f600\nC=$B\nA=${C}${B:+\u00fc}$C", want: map[string]string{"B": "a\u00e9\u65e5\U0001f600", "C": "a\u00e9\u65e5\U0001f600", "A": "a\u00e9\u65e5\U0001f600\u00fca\u00e9\u65e5\U0001f600"}},
+		// Values without "$" don't count towards maxInsertions.
+		{name: "many references", src: "B=1\nA=" + strings.Repeat("$B|", maxInsertions+1) + strings.Repeat("$U|", maxInsertions+1), want: map[string]string{"B": "1", "A": strings.Repeat("1|", maxInsertions+1) + strings.Repeat("|", maxInsertions+1)}},
 		// dotenvx stops here because the result equals a variable's value.
 		{name: "a result equal to a value", src: "A=${L:++${B-}", env: []string{"B=$L}$B", "L="}, want: map[string]string{"A": "$L}$B"}},
 	}
@@ -138,33 +145,56 @@ func TestParseExpansionCycle(t *testing.T) {
 		{"growing", []string{"B=x$B"}, "yx$B"},
 		{"not growing", []string{"B=$B"}, "y$B"},
 		{"through another variable", []string{"B=${C}", "C=-$B"}, "y-$B"},
-		// Node gives "y" here: it discards the repeated reference along with
-		// the alternative that contains it, before it is substituted.
+		// Node finishes these two, because text around the repeated copy
+		// changes what it means. It gives "y" here: the repeated reference
+		// is discarded along with the alternative that contains it.
 		{"inside an alternative", []string{"B=$M", "M=${L:+${B}}"}, "y${L:+${B}}"},
+		// And "yxx" here: the copy's trailing $C runs into the L after it,
+		// making $CL, which is unset.
+		{"next to a name", []string{"B=x$C", "C=${B}L"}, "yx${B}L"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Options{Env: tt.env}.Parse(strings.NewReader("A=y$B\nOTHER=$B"))
+			got, err := Options{Env: tt.env}.Parse(strings.NewReader("Z=y$B\nOTHER=$B"))
 			if !errors.Is(err, ErrReferenceCycle) {
 				t.Errorf("Parse error = %v, want ErrReferenceCycle", err)
 			}
-			if got["A"] != tt.want {
-				t.Errorf("A = %q, want %q", got["A"], tt.want)
+			if got["Z"] != tt.want {
+				t.Errorf("Z = %q, want %q", got["Z"], tt.want)
 			}
 		})
 	}
 }
 
-// Node would eventually produce 2^15 x's here, or run out of memory with a
-// few more variables. The port gives up after maxInsertions substitutions.
+// Node would eventually produce these, or run out of memory with a few more
+// variables. The port gives up after maxInsertions substitutions of values
+// containing "$", or once a value grows past maxExpandedLen.
 func TestParseExpansionLimit(t *testing.T) {
-	env := []string{"X15=x"}
+	doubling := []string{"X15=x"}
 	for i := range 15 {
-		env = append(env, fmt.Sprintf("X%d=$X%d$X%d", i, i+1, i+1))
+		doubling = append(doubling, fmt.Sprintf("X%d=$X%d$X%d", i, i+1, i+1))
 	}
-	_, err := Options{Env: env}.Parse(strings.NewReader("A=y$X0"))
-	if !errors.Is(err, ErrExpansionLimit) {
-		t.Errorf("Parse error = %v, want ErrExpansionLimit", err)
+	// The same, defined in order in the source, needs few substitutions
+	// for each value, but the values grow.
+	src := "X0=xxxxxxxx"
+	for i := 1; i <= 30; i++ {
+		src += fmt.Sprintf("\nX%d=$X%d$X%d", i, i-1, i-1)
+	}
+	tests := []struct {
+		name string
+		opts Options
+		src  string
+	}{
+		{"substitutions", Options{Env: doubling}, "A=y$X0"},
+		{"length", Options{Env: []string{}}, src},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.opts.Parse(strings.NewReader(tt.src))
+			if !errors.Is(err, ErrExpansionLimit) {
+				t.Errorf("Parse error = %v, want ErrExpansionLimit", err)
+			}
+		})
 	}
 }
 
