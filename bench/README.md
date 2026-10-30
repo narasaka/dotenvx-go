@@ -49,9 +49,9 @@ running dotenvx. Medians of 5 runs.
 | | lib | 1 | 11.7 | 5.5 | app 11.7 | 33.8 |
 
 - `dotenvx run` keeps 74 to 92 MiB beside the server for as long as it runs.
-  About 33 MiB of that is file-backed, mostly the pages of the dotenvx executable it has loaded,
-  which other dotenvx processes on the same machine would share; the rest,
-  41 to 58 MiB, is its own.
+  About 33 MiB of that is file-backed, mostly the pages of the dotenvx
+  executable it has loaded, which other dotenvx processes on the same machine
+  would share; the rest, 41 to 58 MiB, is its own.
 - Both dotenvx setups take 0.44 s (20 values) to 3 s (200 values) before the
   server can start. From the two files, each extra value adds about 14 ms.
 - Loading the file with dotenvx-go adds about 8 ms (20 values) to 31 ms (200
