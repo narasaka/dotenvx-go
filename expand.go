@@ -41,46 +41,85 @@ type origins struct {
 	bytes []int32
 	nodes []originNode
 	fill  []int32
-	// names holds one copy of each name, so that nodes neither keep the
-	// values their names were cut from alive nor repeat long names.
-	names map[string]string
+	// ids numbers the names seen, keyed by a copy of each, so that nothing
+	// keeps the values the names were cut from alive.
+	ids map[string]int32
+	// seen and meets support common. In its latest call, seen[n] == call
+	// for each node n it has visited, and meets[n] is the node where n's
+	// chain meets the chain of the reference's first byte.
+	seen  []int32
+	meets []int32
+	call  int32
 }
 
 type originNode struct {
-	name   string
+	name   int32
 	parent int32
 	depth  int32
 }
 
 func newOrigins(n int) *origins {
-	return &origins{bytes: make([]int32, n), nodes: []originNode{{}}, names: map[string]string{}}
+	return &origins{
+		bytes: make([]int32, n),
+		nodes: []originNode{{}},
+		ids:   map[string]int32{},
+		seen:  []int32{0},
+		meets: []int32{0},
+	}
 }
 
-// has reports whether the chain starting at node i includes name.
-func (o *origins) has(i int32, name string) bool {
-	for ; i != 0; i = o.nodes[i].parent {
-		if o.nodes[i].name == name {
+// id returns the number of name, numbering it if it is new.
+func (o *origins) id(name string) int32 {
+	id, ok := o.ids[name]
+	if !ok {
+		id = int32(len(o.ids))
+		o.ids[strings.Clone(name)] = id
+	}
+	return id
+}
+
+// has reports whether the chain starting at node n includes name.
+func (o *origins) has(n int32, name string) bool {
+	id, ok := o.ids[name]
+	for ; ok && n != 0; n = o.nodes[n].parent {
+		if o.nodes[n].name == id {
 			return true
 		}
 	}
 	return false
 }
 
-// common returns the deepest node shared by the chains of bytes [start:end].
+// common returns the deepest node shared by the chains of bytes
+// [start:end]. It visits each node at most once, so it costs no more than
+// the length of the reference plus the number of nodes.
 func (o *origins) common(start, end int) int32 {
-	c := o.bytes[start]
-	for _, b := range o.bytes[start+1 : end] {
-		for o.nodes[b].depth > o.nodes[c].depth {
-			b = o.nodes[b].parent
-		}
-		for o.nodes[c].depth > o.nodes[b].depth {
-			c = o.nodes[c].parent
-		}
-		for b != c {
-			b, c = o.nodes[b].parent, o.nodes[c].parent
+	o.call++
+	// Mark the chain of the first byte. Each of its nodes meets it at
+	// itself.
+	first := o.bytes[start]
+	for n := first; ; n = o.nodes[n].parent {
+		o.seen[n], o.meets[n] = o.call, n
+		if n == 0 {
+			break
 		}
 	}
-	return c
+	common := first
+	for _, b := range o.bytes[start+1 : end] {
+		// Climb to a node visited before, which leads to the marked chain
+		// (the source at worst), and note where for the nodes on the way.
+		n := b
+		for o.seen[n] != o.call {
+			n = o.nodes[n].parent
+		}
+		meet := o.meets[n]
+		for m := b; m != n; m = o.nodes[m].parent {
+			o.seen[m], o.meets[m] = o.call, meet
+		}
+		if o.nodes[meet].depth < o.nodes[common].depth {
+			common = meet
+		}
+	}
+	return common
 }
 
 // insert replaces bytes [start:end] with n bytes that came from the value
@@ -90,10 +129,9 @@ func (o *origins) insert(start, end, n int, name string, parent int32) {
 		o.bytes = slices.Delete(o.bytes, start, end)
 		return
 	}
-	if _, ok := o.names[name]; !ok {
-		o.names[name] = strings.Clone(name)
-	}
-	o.nodes = append(o.nodes, originNode{name: o.names[name], parent: parent, depth: o.nodes[parent].depth + 1})
+	o.nodes = append(o.nodes, originNode{name: o.id(name), parent: parent, depth: o.nodes[parent].depth + 1})
+	o.seen = append(o.seen, 0)
+	o.meets = append(o.meets, 0)
 	o.fill = slices.Grow(o.fill[:0], n)[:n]
 	// Fill by doubling, which copies in bulk rather than byte by byte.
 	o.fill[0] = int32(len(o.nodes) - 1)

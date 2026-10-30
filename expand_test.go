@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 type parseCase struct {
@@ -255,6 +256,7 @@ func TestExpandMemory(t *testing.T) {
 		// Each ${K} becomes ${NNN…}, a long name that is then looked up.
 		{"long names of unset variables", strings.Repeat("${K}|", refs), map[string]string{"K": "${" + long + "}"}, 2 << 20},
 		{"long names of set variables", strings.Repeat("${K}|", refs), map[string]string{"K": "${" + long + "}", long: "1"}, 2 << 20},
+		{"distinct names", strings.Repeat("x", 1<<20) + distinctRefs(refs), distinctVars(refs), 16 << 20},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -263,7 +265,7 @@ func TestExpandMemory(t *testing.T) {
 			calls := 0
 			lookup := func(name string) (string, bool) {
 				// Measure at the lookup of the last reference.
-				if calls++; calls == 2*refs-1 || tt.name == "intermediate values" && calls == refs {
+				if calls++; calls == 2*refs-1 || strings.HasPrefix(tt.value, "x") && calls == refs {
 					during = liveHeap()
 				}
 				v, ok := tt.vars[name]
@@ -276,6 +278,47 @@ func TestExpandMemory(t *testing.T) {
 				t.Errorf("live heap grew %d KiB during %d substitutions", growth>>10, refs)
 			}
 		})
+	}
+}
+
+func distinctRefs(n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "${K%d}", i)
+	}
+	return b.String()
+}
+
+func distinctVars(n int) map[string]string {
+	vars := map[string]string{}
+	for i := range n {
+		vars[fmt.Sprintf("K%d", i)] = "1"
+	}
+	return vars
+}
+
+// Finding a reference's common origin must not cost its length times the
+// depth of its origins. Here a 1 MiB value 9,000 substitutions deep is the
+// default of a reference that starts in the source.
+func TestExpandDeepOrigins(t *testing.T) {
+	const depth = 9000
+	vars := map[string]string{"SET": "s", fmt.Sprint("B", depth): strings.Repeat("x", 1<<20)}
+	for i := range depth {
+		vars[fmt.Sprint("B", i)] = fmt.Sprintf("${B%d}", i+1)
+	}
+	lookup := func(name string) (string, bool) {
+		v, ok := vars[name]
+		return v, ok
+	}
+	start := time.Now()
+	got, err := expand("a${SET:-${B0}}", lookup, nil)
+	if err != nil || got != "as" {
+		t.Errorf("expand = %q, %v; want %q", got, err, "as")
+	}
+	// Linear work takes well under a second, even with -race. Quadratic
+	// work takes minutes.
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("expand took %v", elapsed)
 	}
 }
 
