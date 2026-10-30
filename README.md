@@ -15,10 +15,10 @@ func main() {
 }
 ```
 
-It's the Go equivalent of `require('@dotenvx/dotenvx').config()`, not of
-`dotenvx run`. It is a community port, as [godotenv](https://github.com/joho/godotenv)
+It ports the parsing and decryption of `require('@dotenvx/dotenvx').config()`,
+not `dotenvx run`. It is a community port, as [godotenv](https://github.com/joho/godotenv)
 is of dotenv. Use the `dotenvx` CLI to encrypt, set and edit values; this
-library only loads them.
+library only loads them. See [what it doesn't do](#what-it-doesnt-do).
 
 ## Install
 
@@ -51,8 +51,8 @@ if err := dotenvx.Load(".env"); err != nil && !errors.Is(err, fs.ErrNotExist) {
 ```
 
 Values are parsed exactly as dotenvx parses them. That covers comments,
-`export`, single, double and backtick quotes, multiline values, and UTF-16
-files. It also expands `$VAR`, `${VAR}`, `${VAR:-default}` and the other forms,
+`export`, single, double and backtick quotes, multiline values, and UTF-16LE
+files with a byte order mark. It also expands `$VAR`, `${VAR}`, `${VAR:-default}` and the other forms,
 and substitutes `$(command)` output. The port passes all 88 scenarios of
 [dotenvx's conformance suite](https://dotenvx.com/spec).
 
@@ -69,19 +69,30 @@ dotenvx encrypt
 
 That replaces each value with `encrypted:…` and writes the private key to
 `.env.keys`, which you keep out of version control. `Load` finds `.env.keys`
-next to each file. In production, set only the private key:
+next to each file, except that, as in dotenvx, it reads `.env.keys` in the
+current directory when the file's own key variable is already set
+(`DOTENV_PRIVATE_KEY_PRODUCTION` for `.env.production`).
+`Options.KeyFiles` names the key files explicitly. In production, set only
+the private key:
 
 ```sh
 DOTENV_PRIVATE_KEY=… ./your-app
 ```
 
-Private keys come from `.env.keys` files, from `DOTENV_PRIVATE_KEY*`
-variables (`DOTENV_PRIVATE_KEY_PRODUCTION` for `.env.production`), and from
-`Options.KeyProvider`, a hook for key stores. As in dotenvx, a file that
-declares its public key only takes the matching key from `.env.keys`, so a
-value encrypted for another environment's key stays encrypted. A value that
-can't be decrypted stays encrypted, and `Load` reports it in an error that
-matches `dotenvx.ErrDecryptionFailed`, while still loading everything else.
+Private keys come from:
+
+- `.env.keys` files. As in dotenvx, a file that declares its public key
+  (`DOTENV_PUBLIC_KEY`) only takes the keys of that public key, and of any
+  `DOTENV_PUBLIC_KEY*` variables in the environment, from `.env.keys`. A
+  file that declares none takes every key in it.
+- `DOTENV_PRIVATE_KEY*` variables, each holding one key. Their names
+  follow the files by convention, but each one is tried for every file.
+- `Options.KeyProvider`, a hook for key stores. If it fails, the file is
+  read with every key in `.env.keys`, and its error is returned too.
+
+A value that can't be decrypted keeps its `encrypted:…` text, and `Load`
+reports it in an error that matches `dotenvx.ErrDecryptionFailed`, while
+still loading everything else.
 
 ### Embedding
 
@@ -89,6 +100,17 @@ The encrypted file is safe to compile into the binary, so a single binary can
 carry its configuration and only needs the key at run time:
 
 ```go
+package main
+
+import (
+	"bytes"
+	_ "embed"
+	"log"
+	"os"
+
+	"github.com/narasaka/dotenvx-go"
+)
+
 //go:embed .env
 var envFile []byte
 
@@ -98,7 +120,9 @@ func main() {
 		log.Fatal(err)
 	}
 	for k, v := range values {
-		os.Setenv(k, v)
+		if err := os.Setenv(k, v); err != nil {
+			log.Fatalf("setting %s: %v", k, err)
+		}
 	}
 }
 ```
@@ -111,16 +135,23 @@ tools and tests.
 
 ## What it doesn't do
 
-`dotenvx run` starts your program as a child process, which lets it do things
-an in-process library can't, such as redacting secrets from the program's
-output, and more coming. This library loads values into your own process and
-does none of that. It also leaves out the CLI's other features: encrypting
-and editing files, key stores like 1Password, Bitwarden, the system keychain
-and dotenvx Armor, `Dotenvxfile` policies, and the inject summary.
+dotenvx's own `config()` does more than load values. It redacts secrets
+from the program's output, following `Dotenvxfile` policies, by patching
+Node's output streams, and it can get keys from key stores (1Password,
+Bitwarden, the system keychain, dotenvx Armor). This port does none of that,
+and doesn't print dotenvx's inject summary either.
+
+A Go library can't redact output reliably anyway: writes straight to file
+descriptors 1 and 2, cgo and child processes would get past it. That's what
+`dotenvx run` is for. It starts your program as a child process, so it sees
+all of its output, and it is where dotenvx's upcoming credential brokering
+will live too. Encrypting and editing files also stay with the CLI.
+`Options.KeyProvider` is the place to plug in a key store.
 
 ## Command substitution
 
-As in dotenvx, `KEY=$(command)` runs the command with `/bin/sh` while loading.
+As in dotenvx, `KEY=$(command)` runs the command with `/bin/sh` while
+loading, and so does an existing value of a key the file sets.
 That's surprising in a library, and there is no `/bin/sh` on Windows or in
 minimal container images (where the value is kept as it is), so it can be
 turned off:
@@ -132,10 +163,13 @@ dotenvx.Options{DisableCommandSubstitution: true}.Load()
 ## Compatibility
 
 The port follows Node's `@dotenvx/primitives` 4.3.0, which is what dotenvx
-runs, including where the Rust implementation differs. It deviates only where
-dotenvx relies on accidents of JavaScript, for example how `String.prototype.replace`
-treats `$$` in a value, or it would hang or crash. Each deviation is
-documented on the function concerned and pinned by a test.
+runs, including where the Rust implementation differs. It deviates where
+dotenvx relies on accidents of JavaScript (how `String.prototype.replace`
+treats `$$` in a value, for example), where dotenvx would hang or crash, and
+in a few places where Go calls for it: commands always run with `/bin/sh`,
+even on Windows, where dotenvx uses `cmd.exe`, paths are used as given,
+without `~` expansion, and keys must be exactly 64 hex digits. Each
+deviation is documented on the function concerned.
 
 ## License
 

@@ -140,9 +140,13 @@ var encryptedEnv []byte
 // An encrypted .env can be compiled into the binary, which then only needs
 // the private key at run time.
 func ExampleOptions_Parse_embedded() {
-	// In production, the private key would be all there is in the
-	// environment: here, it is the only entry in Env.
-	opts := dotenvx.Options{Env: []string{"DOTENV_PRIVATE_KEY=ec9e80073d7ace817d35acb8b7293cbf8e5981b4d2f5708ee5be405122993cd1"}}
+	// In production, the private key would be the only dotenvx variable in
+	// the environment: here, it is the only entry in Env, and there are no
+	// key files.
+	opts := dotenvx.Options{
+		Env:      []string{"DOTENV_PRIVATE_KEY=ec9e80073d7ace817d35acb8b7293cbf8e5981b4d2f5708ee5be405122993cd1"},
+		KeyFiles: []string{},
+	}
 	values, err := opts.Parse(bytes.NewReader(encryptedEnv))
 	if err != nil {
 		fmt.Println(err)
