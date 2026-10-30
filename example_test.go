@@ -34,3 +34,16 @@ EXISTING=from the file
 	// from the environment
 	// from the file
 }
+
+func ExampleOptions_Read() {
+	// Files are read in order, and the first to set a key wins, so a local
+	// override file comes first.
+	values, err := dotenvx.Options{Env: []string{}}.Read("testdata/node/export.env", "testdata/node/eval.env")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(values["KEY"], values["HELLO"])
+	// Output:
+	// value world
+}

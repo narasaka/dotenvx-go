@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -68,28 +69,38 @@ type Options struct {
 // would take more than 10,000 substitutions of values containing "$", or
 // grow past 16 MiB, stops the same way, with ErrExpansionLimit.
 //
-// The source is read as UTF-8. Bytes that aren't valid UTF-8 are kept as
-// they are, where dotenvx, which only sees decoded text, would have replaced
-// them with U+FFFD. Keys such as constructor or __proto__, which make
-// dotenvx throw, are parsed like any other key.
+// Source that starts with a UTF-16LE byte order mark is decoded from
+// UTF-16LE; anything else is read as UTF-8. Bytes that aren't valid UTF-8
+// are kept as they are, where dotenvx, which only sees decoded text, would
+// have replaced them with U+FFFD. Keys such as constructor or __proto__,
+// which make dotenvx throw, are parsed like any other key.
 func (o Options) Parse(r io.Reader) (map[string]string, error) {
 	src, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("dotenvx: %w", err)
 	}
-	env := o.Env
-	if env == nil {
-		env = os.Environ()
+	return o.parse(decode(src), o.environment(), "dotenvx: ")
+}
+
+// environment returns Env, or the process environment if Env is nil.
+func (o Options) environment() environment {
+	if o.Env == nil {
+		return environment{vars: environ(os.Environ()), fold: runtime.GOOS == "windows"}
 	}
-	existing := environ(env)
+	return environment{vars: environ(o.Env)}
+}
+
+// parse resolves the values in src against the existing environment. Its
+// errors start with prefix.
+func (o Options) parse(src string, existing environment, prefix string) (map[string]string, error) {
 	parsed := map[string]string{}
 	// literals holds the values of single-quoted assignments.
 	literals := map[string]string{}
 	// lookup resolves a reference: existing values win, unless overloading.
 	lookup := func(name string) (string, bool) {
-		first, second := existing, parsed
+		first, second := existing.vars, parsed
 		if o.Overload {
-			first, second = parsed, existing
+			first, second = parsed, existing.vars
 		}
 		if v, ok := first[name]; ok {
 			return v, true
@@ -98,25 +109,26 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 		return v, ok
 	}
 	var errs []error
-	for _, a := range scan(string(src)) {
+	for _, a := range scan(src) {
 		value := a.value
-		if v, ok := existing[a.key]; ok && !o.Overload {
-			value = v
+		current, exists := existing.get(a.key)
+		if exists && !o.Overload {
+			value = current
 		}
 		// Like dotenvx, evaluate a value from the environment only if the
 		// source didn't replace it.
 		evaluated := false
-		if v, ok := existing[a.key]; a.quote != '\'' && !o.DisableCommandSubstitution &&
-			strings.Contains(value, "$(") && (!ok || v == value) {
-			next := evaluate(value, commandEnv(existing, parsed))
+		if a.quote != '\'' && !o.DisableCommandSubstitution &&
+			strings.Contains(value, "$(") && (!exists || current == value) {
+			next := evaluate(value, commandEnv(existing.vars, parsed))
 			evaluated = next != value
 			value = next
 		}
 		// Existing values are taken as they are, unless they are empty.
-		if a.quote != '\'' && !evaluated && (existing[a.key] == "" || o.Overload) {
+		if a.quote != '\'' && !evaluated && (current == "" || o.Overload) {
 			expanded, err := expand(value, lookup, literals)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("dotenvx: expanding %s: %w", a.key, err))
+				errs = append(errs, fmt.Errorf("%sexpanding %s: %w", prefix, a.key, err))
 			}
 			value = strings.ReplaceAll(expanded, `\$`, "$")
 		}

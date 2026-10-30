@@ -178,6 +178,16 @@ func TestIsJSSpace(t *testing.T) {
 	}
 }
 
+func TestParseUTF16(t *testing.T) {
+	got, err := Options{Env: []string{}}.Parse(strings.NewReader("\xff\xfeA\x00=\x001\x00"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"A": "1"}; !maps.Equal(got, want) {
+		t.Errorf("Parse = %q, want %q", got, want)
+	}
+}
+
 // The pathological cases took quadratic time in earlier versions of scan.
 func BenchmarkScan(b *testing.B) {
 	for _, bc := range []struct{ name, src string }{

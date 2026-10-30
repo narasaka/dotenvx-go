@@ -21,6 +21,28 @@ func environ(env []string) map[string]string {
 	return m
 }
 
+// environment is the existing environment that source is resolved against.
+type environment struct {
+	vars map[string]string
+	// fold makes get ignore case, as names in the Windows process
+	// environment do. It doesn't affect expansion: dotenvx expands from a
+	// copy of the process environment, whose names are case-sensitive.
+	fold bool
+}
+
+// get looks up whether key already exists, and its value.
+func (e environment) get(key string) (string, bool) {
+	if v, ok := e.vars[key]; ok || !e.fold {
+		return v, ok
+	}
+	for k, v := range e.vars {
+		if strings.EqualFold(k, key) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
 // commandEnv is the environment commands run with: the existing environment
 // overlaid with the values parsed so far.
 func commandEnv(existing, parsed map[string]string) []string {
