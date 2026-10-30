@@ -30,7 +30,9 @@ func (e *Error) Is(target error) bool {
 }
 
 // These are for matching with errors.Is. The errors returned are new values
-// with the same codes, so changing them doesn't change these.
+// with the same codes, so changing them doesn't change these. Parse, Read
+// and Load report values they couldn't decrypt with an error that matches
+// ErrDecryptionFailed and names their keys.
 var (
 	ErrMissingPrivateKey = &Error{Code: "MISSING_PRIVATE_KEY", Message: "could not decrypt because private key is missing"}
 	ErrInvalidPrivateKey = &Error{Code: "INVALID_PRIVATE_KEY", Message: "could not decrypt using private key"}

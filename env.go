@@ -24,10 +24,28 @@ func environ(env []string) map[string]string {
 // environment is the existing environment that source is resolved against.
 type environment struct {
 	vars map[string]string
+	// names lists the names in vars in their original order, as far as it
+	// is known; dotenvx goes through some of them in that order.
+	names []string
 	// fold makes get ignore case, as names in the Windows process
 	// environment do. It doesn't affect expansion: dotenvx expands from a
 	// copy of the process environment, whose names are case-sensitive.
 	fold bool
+}
+
+// newEnvironment makes the environment of "KEY=value" entries.
+func newEnvironment(env []string, fold bool) environment {
+	vars := environ(env)
+	var names []string
+	seen := map[string]bool{}
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if _, ok := vars[name]; ok && !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return environment{vars: vars, names: names, fold: fold}
 }
 
 // get looks up whether key already exists, and its value.
@@ -45,7 +63,8 @@ func (e environment) get(key string) (string, bool) {
 
 // set sets key to value, as the process environment would: with fold, it
 // updates an existing key that differs only in case, keeping its spelling.
-func (e environment) set(key, value string) {
+// A new key goes at the end of names.
+func (e *environment) set(key, value string) {
 	if _, ok := e.vars[key]; !ok && e.fold {
 		for k := range e.vars {
 			if strings.EqualFold(k, key) {
@@ -53,6 +72,9 @@ func (e environment) set(key, value string) {
 				break
 			}
 		}
+	}
+	if _, ok := e.vars[key]; !ok {
+		e.names = append(e.names, key)
 	}
 	e.vars[key] = value
 }
