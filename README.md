@@ -28,9 +28,9 @@ go get github.com/narasaka/dotenvx-go
 
 It needs Go 1.24 or later. Its one dependency is
 [decred's secp256k1](https://pkg.go.dev/github.com/decred/dcrd/dcrec/secp256k1/v4),
-because the standard library doesn't have that curve. Unlike the one
-dotenvx uses, it isn't constant-time, so a process sharing the machine could
-learn a private key by watching decryption; see `Decrypt`.
+because the standard library doesn't have that curve. Unlike the library
+dotenvx uses, it isn't written to be constant-time, so a process sharing the
+machine could learn a private key by watching decryption; see `Decrypt`.
 
 ## Loading
 
