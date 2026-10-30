@@ -103,7 +103,10 @@ func decodeBase64(s string) []byte {
 // ErrEncryptionFailed when the scheme isn't allowed, as with
 // GODEBUG=fips140=only.
 func Encrypt(publicKey, value string) (string, error) {
-	b, err := hex.DecodeString(strings.TrimPrefix(publicKey, "0x"))
+	if len(publicKey) > 2 && publicKey[0] == '0' && (publicKey[1] == 'x' || publicKey[1] == 'X') {
+		publicKey = publicKey[2:]
+	}
+	b, err := hex.DecodeString(publicKey)
 	if err != nil || len(b) == 0 || b[0] != uncompressedPoint && b[0] != 2 && b[0] != 3 {
 		return "", newError(ErrInvalidPublicKey, err)
 	}

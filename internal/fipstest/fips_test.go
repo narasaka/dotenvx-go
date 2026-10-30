@@ -1,7 +1,8 @@
 //go:debug fips140=only
 
 // Package fipstest checks dotenvx in FIPS 140-only mode, which applies to a
-// whole test binary, so it has a package of its own.
+// whole test binary, so it has a package of its own. Building it needs Go
+// 1.24.1 or later: 1.24.0 didn't know the fips140 setting.
 package fipstest
 
 import (

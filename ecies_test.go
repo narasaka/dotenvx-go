@@ -171,12 +171,14 @@ func TestEncryptErrors(t *testing.T) {
 }
 
 func TestEncryptHexPrefix(t *testing.T) {
-	encrypted, err := Encrypt("0x"+testPublicKey, "hi")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := Decrypt(testPrivateKey, encrypted); err != nil || got != "hi" {
-		t.Errorf("round trip = %q, %v", got, err)
+	for _, prefix := range []string{"0x", "0X"} {
+		encrypted, err := Encrypt(prefix+testPublicKey, "hi")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := Decrypt(testPrivateKey, encrypted); err != nil || got != "hi" {
+			t.Errorf("round trip with %s = %q, %v", prefix, got, err)
+		}
 	}
 }
 
@@ -186,8 +188,8 @@ func TestErrorIs(t *testing.T) {
 		t.Error("Error.Is doesn't match by code")
 	}
 	cause := errors.New("cause")
-	if !errors.Is(newError(ErrDecryptionFailed, cause), cause) {
-		t.Error("Error doesn't unwrap to its cause")
+	if err := newError(ErrDecryptionFailed, cause); !errors.Is(err, cause) || err.Error() != "[DECRYPTION_FAILED] could not decrypt value: cause" {
+		t.Errorf("error with a cause = %q, which should unwrap to it", err)
 	}
 	// Returned errors are copies, which callers may change.
 	_, err1 := Decrypt("", testEncrypted)

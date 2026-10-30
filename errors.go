@@ -1,7 +1,8 @@
 package dotenvx
 
 // Error is an error with one of dotenvx's codes, such as
-// "WRONG_PRIVATE_KEY". Its message has dotenvx's "[CODE] message" form.
+// "WRONG_PRIVATE_KEY". Its message has dotenvx's "[CODE] message" form,
+// followed by the underlying error, if any.
 // errors.Is matches an Error against the Err variables by code alone.
 type Error struct {
 	Code    string
@@ -11,6 +12,9 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	if e.Err != nil {
+		return "[" + e.Code + "] " + e.Message + ": " + e.Err.Error()
+	}
 	return "[" + e.Code + "] " + e.Message
 }
 
