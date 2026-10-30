@@ -27,6 +27,10 @@ type report struct {
 }
 
 func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: go run extract.go path/to/report.json")
+		os.Exit(2)
+	}
 	if err := run(os.Args[1]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

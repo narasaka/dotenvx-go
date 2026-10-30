@@ -28,8 +28,8 @@ func loadSpec(t *testing.T) []specScenario {
 	for _, file := range files {
 		name := strings.TrimSuffix(filepath.Base(file), ".env")
 		values, ok := expected[name]
-		if !ok {
-			t.Fatalf("%s has no entry in expected.json", file)
+		if !ok || values == nil {
+			t.Fatalf("%s has no values in expected.json", file)
 		}
 		delete(expected, name)
 		scenarios = append(scenarios, specScenario{name: name, src: readFile(t, file), expected: values})
@@ -55,6 +55,13 @@ func loadNodeGoldens(t *testing.T) []nodeGolden {
 	if err != nil {
 		t.Fatal(err)
 	}
+	jsons, err := filepath.Glob(filepath.Join("testdata", "node", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jsons) != 2*len(files) {
+		t.Fatalf("testdata/node has %d goldens for %d fixtures, want 2 each", len(jsons), len(files))
+	}
 	var goldens []nodeGolden
 	for _, file := range files {
 		base := strings.TrimSuffix(file, ".env")
@@ -66,6 +73,9 @@ func loadNodeGoldens(t *testing.T) []nodeGolden {
 				path = base + ".overload.json"
 			}
 			readJSON(t, path, &golden.expected)
+			if golden.expected == nil {
+				t.Fatalf("%s has no values", path)
+			}
 			goldens = append(goldens, golden)
 		}
 	}

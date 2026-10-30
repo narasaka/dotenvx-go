@@ -5,8 +5,8 @@
 The dotenvx conformance suite from https://dotenvx.com/spec: 88 parsing
 scenarios, each `<scenario>.env` with its expected values in `expected.json`.
 They come from `_data/report.json` in the dotenvx.com site repository
-(github.com/dotenvx/dotenvx.github.io) and were extracted with
-`go run extract.go path/to/report.json`.
+(github.com/dotenvx/dotenvx.github.io, commit b3eda9c) and were extracted
+with `go run extract.go path/to/report.json`.
 
 The suite was run with `MACHINE=machine` already in the environment, and
 existing variables win unless overload is on. That is why `103_MACHINE`
@@ -23,8 +23,8 @@ repository goes public.
 ## node
 
 Extra parsing fixtures from the dotenvx CLI test suite
-(github.com/dotenvx/dotenvx, commit 5e80bfe, `tests/.env*`, BSD-3-Clause,
-Copyright (c) 2024, Scott Motte):
+(github.com/dotenvx/dotenvx, commit 5e80bfe, `tests/.env*`), under the
+BSD-3-Clause license in `LICENSE.dotenvx`, Copyright (c) 2024, Scott Motte:
 
 | File | Source |
 | --- | --- |
@@ -39,11 +39,13 @@ are what `@dotenvx/primitives` 4.3.0, the Node implementation of dotenvx,
 returns for each file with `MACHINE=machine` as the only existing environment
 variable: `NAME.json` without overload, and `NAME.overload.json` with it.
 Regenerate them with `node generate.js path/to/node_modules/@dotenvx/primitives`.
+It refuses any other version of the package, and any fixture that Node
+reports errors for.
 
 ## encrypted, multiple
 
 Encrypted fixtures, with their private keys committed on purpose, from the
-dotenvx CLI test suite (same commit and license as above):
+dotenvx CLI test suite (same commit and license, `LICENSE.dotenvx`):
 
 - `encrypted/` is `tests/monorepo/apps/encrypted`: `HELLO` decrypts to
   `encrypted`.
