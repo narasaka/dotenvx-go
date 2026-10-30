@@ -2,6 +2,7 @@ package dotenvx
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"maps"
 	"os"
@@ -106,15 +107,16 @@ func TestReadReferenceCycle(t *testing.T) {
 
 func TestReadUTF16(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
-	// "A=é\n" in UTF-16LE with a byte order mark, plus a stray odd byte.
-	if err := os.WriteFile(path, []byte{0xff, 0xfe, 'A', 0, '=', 0, 0xe9, 0, '\n', 0, 'B'}, 0o600); err != nil {
+	// "A=é\nB=" and an unpaired surrogate in UTF-16LE with a byte order
+	// mark, plus a stray odd byte.
+	if err := os.WriteFile(path, []byte{0xff, 0xfe, 'A', 0, '=', 0, 0xe9, 0, '\n', 0, 'B', 0, '=', 0, 0x00, 0xd8, 'C'}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got, err := Options{Env: []string{}}.Read(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := map[string]string{"A": "é"}; !maps.Equal(got, want) {
+	if want := map[string]string{"A": "é", "B": "\ufffd"}; !maps.Equal(got, want) {
 		t.Errorf("Read = %q, want %q", got, want)
 	}
 }
@@ -159,13 +161,101 @@ func TestLoadErrors(t *testing.T) {
 // case-insensitive there, but expands from a copy of it, whose names aren't.
 func TestParseFoldedEnv(t *testing.T) {
 	env := environment{vars: environ([]string{"Path=env"}), fold: true}
-	got, _ := Options{}.parse("PATH=file\nA=$PATH|$Path|${path:-unset}", env, "")
-	if want := map[string]string{"PATH": "env", "A": "env|env|unset"}; !maps.Equal(got, want) {
-		t.Errorf("parse = %q, want %q", got, want)
+	got, _, err := Options{}.parse("PATH=file\nA=$PATH|$Path|${path:-unset}", env, "")
+	if want := map[string]string{"PATH": "env", "A": "env|env|unset"}; err != nil || !maps.Equal(got, want) {
+		t.Errorf("parse = %q, %v; want %q", got, err, want)
 	}
 	env.fold = false
-	got, _ = Options{}.parse("PATH=file", env, "")
-	if want := map[string]string{"PATH": "file"}; !maps.Equal(got, want) {
-		t.Errorf("without folding, parse = %q, want %q", got, want)
+	got, _, err = Options{}.parse("PATH=file", env, "")
+	if want := map[string]string{"PATH": "file"}; err != nil || !maps.Equal(got, want) {
+		t.Errorf("without folding, parse = %q, %v; want %q", got, err, want)
+	}
+}
+
+// After each file, dotenvx sets its values in process.env, in the order
+// they were first assigned. On Windows, setting a name that differs only in
+// case from an existing one updates that one, keeping its spelling. Each
+// case here was checked against @dotenvx/primitives 4.3.0 with process.env
+// standing in for the Windows one.
+func TestReadFoldedEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    []string
+		env      []string
+		overload bool
+		// want is what Read returns, and wantEnv the environment after it.
+		want, wantEnv map[string]string
+	}{
+		{"overload across files", []string{"DXG_Foo=first", "DXG_FOO=second"}, nil, true,
+			map[string]string{"DXG_Foo": "first", "DXG_FOO": "second"}, map[string]string{"DXG_Foo": "second"}},
+		{"an existing spelling", []string{"PATH=new", "RESULT=$Path"}, []string{"Path=old"}, true,
+			map[string]string{"PATH": "new", "RESULT": "new"}, map[string]string{"Path": "new", "RESULT": "new"}},
+		{"within a file", []string{"DXG_Foo=one\nDXG_FOO=two"}, nil, false,
+			map[string]string{"DXG_Foo": "one", "DXG_FOO": "two"}, map[string]string{"DXG_Foo": "two"}},
+		{"a later file", []string{"DXG_Foo=one\nDXG_FOO=two", "DXG_Foo=ignored\nDXG_FOO=ignored"}, nil, false,
+			map[string]string{"DXG_Foo": "two", "DXG_FOO": "two"}, map[string]string{"DXG_Foo": "two"}},
+		{"in order of first assignment", []string{"DXG_FOO=two\nDXG_Foo=one\nDXG_FOO=three"}, nil, false,
+			map[string]string{"DXG_FOO": "three", "DXG_Foo": "one"}, map[string]string{"DXG_FOO": "one"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var files []string
+			for i, src := range tt.files {
+				files = append(files, writeFile(t, dir, fmt.Sprint(i), src))
+			}
+			env := environment{vars: environ(tt.env), fold: true}
+			got, _, err := Options{Overload: tt.overload}.read(files, env)
+			if err != nil || !maps.Equal(got, tt.want) {
+				t.Errorf("read = %q, %v; want %q", got, err, tt.want)
+			}
+			if !maps.Equal(env.vars, tt.wantEnv) {
+				t.Errorf("environment = %q, want %q", env.vars, tt.wantEnv)
+			}
+		})
+	}
+}
+
+func TestReadDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, ".env", "A=1")
+	got, err := Options{Env: []string{}}.Read(dir)
+	if want := map[string]string{"A": "1"}; err != nil || !maps.Equal(got, want) {
+		t.Errorf("Read(dir) = %q, %v; want %q", got, err, want)
+	}
+}
+
+func TestReadDefaultFiles(t *testing.T) {
+	dir := t.TempDir()
+	a := writeFile(t, dir, "a.env", "A=a\nB=a")
+	b := writeFile(t, dir, "b.env", "B=b\nC=b")
+	tests := []struct {
+		name string
+		env  []string
+		want map[string]string
+	}{
+		{"DOTENV_FILE", []string{"DOTENV_FILE= " + a + " ,, " + b, "DOTENV_PATH=" + b}, map[string]string{"A": "a", "B": "a", "C": "b"}},
+		{"DOTENV_PATH", []string{"DOTENV_FILE=", "DOTENV_PATH=" + b}, map[string]string{"B": "b", "C": "b"}},
+		{"DOTENV_F", []string{"DOTENV_F=" + a}, map[string]string{"A": "a", "B": "a"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Options{Env: tt.env}.Read()
+			if err != nil || !maps.Equal(got, tt.want) {
+				t.Errorf("Read() = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
+// Load always resolves against the process environment it sets.
+func TestLoadIgnoresEnv(t *testing.T) {
+	path := writeFile(t, t.TempDir(), ".env", "DOTENVX_GO_A=file")
+	t.Setenv("DOTENVX_GO_A", "process")
+	if err := (Options{Env: []string{}}).Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("DOTENVX_GO_A"); got != "process" {
+		t.Errorf("DOTENVX_GO_A = %q, want the existing value", got)
 	}
 }

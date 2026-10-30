@@ -1,7 +1,10 @@
 package dotenvx_test
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 
 	"github.com/narasaka/dotenvx-go"
@@ -36,14 +39,42 @@ EXISTING=from the file
 }
 
 func ExampleOptions_Read() {
-	// Files are read in order, and the first to set a key wins, so a local
-	// override file comes first.
-	values, err := dotenvx.Options{Env: []string{}}.Read("testdata/node/export.env", "testdata/node/eval.env")
+	// Files are read in order, and the first to set a key wins, so the
+	// local override comes first. The later file sees its values.
+	values, err := dotenvx.Options{Env: []string{}}.Read("testdata/load/.env.local", "testdata/load/.env")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(values["KEY"], values["HELLO"])
+	fmt.Println(values["HELLO"])
+	fmt.Println(values["GREETING"])
 	// Output:
-	// value world
+	// local
+	// Hello, local
+}
+
+func ExampleLoad() {
+	os.Unsetenv("HELLO")
+	// Load ".env" from the current directory, if there is one, and keep
+	// variables that are already set.
+	if err := dotenvx.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		fmt.Println(err)
+		return
+	}
+	if err := dotenvx.Load("testdata/load"); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(os.Getenv("HELLO"))
+	// Output: World
+}
+
+func ExampleOverload() {
+	os.Setenv("HELLO", "from the environment")
+	if err := dotenvx.Overload("testdata/load/.env"); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(os.Getenv("HELLO"))
+	// Output: World
 }

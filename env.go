@@ -43,6 +43,20 @@ func (e environment) get(key string) (string, bool) {
 	return "", false
 }
 
+// set sets key to value, as the process environment would: with fold, it
+// updates an existing key that differs only in case, keeping its spelling.
+func (e environment) set(key, value string) {
+	if _, ok := e.vars[key]; !ok && e.fold {
+		for k := range e.vars {
+			if strings.EqualFold(k, key) {
+				key = k
+				break
+			}
+		}
+	}
+	e.vars[key] = value
+}
+
 // commandEnv is the environment commands run with: the existing environment
 // overlaid with the values parsed so far.
 func commandEnv(existing, parsed map[string]string) []string {

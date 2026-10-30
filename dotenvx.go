@@ -12,10 +12,12 @@ import (
 // Options configures how dotenv source is resolved. The zero value is ready
 // to use and matches the defaults of dotenvx.
 type Options struct {
-	// Env is the existing environment, in the "KEY=value" form of
-	// os.Environ. A key that already exists in Env keeps its existing value
-	// unless Overload is set. If Env is nil, Parse uses the current process
-	// environment; use an empty slice for no existing environment at all.
+	// Env is the existing environment that Parse and Read resolve against,
+	// in the "KEY=value" form of os.Environ. A key that already exists in
+	// Env keeps its existing value unless Overload is set. If Env is nil,
+	// they use the current process environment; use an empty slice for no
+	// existing environment at all. Load ignores Env: it always resolves
+	// against the process environment it sets values in.
 	Env []string
 
 	// Overload lets values from the source replace values that already
@@ -79,7 +81,8 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dotenvx: %w", err)
 	}
-	return o.parse(decode(src), o.environment(), "dotenvx: ")
+	values, _, err := o.parse(decode(src), o.environment(), "dotenvx: ")
+	return values, err
 }
 
 // environment returns Env, or the process environment if Env is nil.
@@ -90,9 +93,10 @@ func (o Options) environment() environment {
 	return environment{vars: environ(o.Env)}
 }
 
-// parse resolves the values in src against the existing environment. Its
-// errors start with prefix.
-func (o Options) parse(src string, existing environment, prefix string) (map[string]string, error) {
+// parse resolves the values in src against the existing environment. It
+// also returns the keys in the order they were first assigned, which is the
+// order dotenvx sets them in. Its errors start with prefix.
+func (o Options) parse(src string, existing environment, prefix string) (map[string]string, []string, error) {
 	parsed := map[string]string{}
 	// literals holds the values of single-quoted assignments.
 	literals := map[string]string{}
@@ -108,6 +112,7 @@ func (o Options) parse(src string, existing environment, prefix string) (map[str
 		v, ok := second[name]
 		return v, ok
 	}
+	var keys []string
 	var errs []error
 	for _, a := range scan(src) {
 		value := a.value
@@ -135,9 +140,12 @@ func (o Options) parse(src string, existing environment, prefix string) (map[str
 		if a.quote == '\'' {
 			literals[a.key] = value
 		}
+		if _, ok := parsed[a.key]; !ok {
+			keys = append(keys, a.key)
+		}
 		parsed[a.key] = value
 	}
-	return parsed, errors.Join(errs...)
+	return parsed, keys, errors.Join(errs...)
 }
 
 // Parse reads dotenv source from r with the default Options.

@@ -4,55 +4,93 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
-	"slices"
+	"path/filepath"
+	"strings"
 	"unicode/utf16"
 )
 
-// Read reads the given env files, or ".env" if none are given, and returns
-// their values without modifying the process environment.
+// Read reads the given env files and returns their values without
+// modifying the process environment. A file that is a directory stands for
+// the .env in it. With no files, like dotenvx, Read reads the
+// comma-separated files named by DOTENV_FILE, DOTENV_PATH or DOTENV_F in
+// the existing environment, the first that is set, or else ".env".
 //
 // Files are read in order, and each one sees the values set by the files
 // before it as existing values. So unless Overload is set, the first file to
 // set a key wins, and with Overload the last one does.
 //
 // A file that can't be read doesn't stop the others: Read returns the values
-// it could read together with the errors.
+// it could read together with the errors. To make .env optional, ignore
+// errors that wrap fs.ErrNotExist.
 func (o Options) Read(files ...string) (map[string]string, error) {
+	values, _, err := o.read(files, o.environment())
+	return values, err
+}
+
+// setting is a value to set in the environment.
+type setting struct{ key, value string }
+
+// read reads files into env, updating it as dotenvx updates the process
+// environment after each file. It returns the values read, and every
+// setting it made to env, in order, for Load to repeat.
+func (o Options) read(files []string, env environment) (map[string]string, []setting, error) {
 	if len(files) == 0 {
-		files = []string{".env"}
+		files = defaultFiles(env)
 	}
-	existing := o.environment()
 	values := map[string]string{}
+	var settings []setting
 	var errs []error
 	for _, file := range files {
+		if info, err := os.Stat(file); err == nil && info.IsDir() {
+			file = filepath.Join(file, ".env")
+		}
 		src, err := os.ReadFile(file)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("dotenvx: %w", err))
 			continue
 		}
-		parsed, err := o.parse(decode(src), existing, "dotenvx: "+file+": ")
+		parsed, keys, err := o.parse(decode(src), env, "dotenvx: "+file+": ")
 		if err != nil {
 			errs = append(errs, err)
 		}
-		for k, v := range parsed {
-			existing.vars[k] = v
-			values[k] = v
+		for _, k := range keys {
+			env.set(k, parsed[k])
+			values[k] = parsed[k]
+			settings = append(settings, setting{k, parsed[k]})
 		}
 	}
-	return values, errors.Join(errs...)
+	return values, settings, errors.Join(errs...)
 }
 
-// Load reads the given env files, or ".env" if none are given, as Read
-// does, and sets their values in the process environment. Like Read, it
-// sets every value it could read even if some files fail.
+// defaultFiles returns the files to read when none are given.
+func defaultFiles(env environment) []string {
+	for _, name := range []string{"DOTENV_FILE", "DOTENV_PATH", "DOTENV_F"} {
+		if v, _ := env.get(name); v != "" {
+			var files []string
+			for _, file := range strings.Split(v, ",") {
+				if file = strings.TrimSpace(file); file != "" {
+					files = append(files, file)
+				}
+			}
+			return files
+		}
+	}
+	return []string{".env"}
+}
+
+// Load reads env files as Read does, and sets their values in the process
+// environment, in the order dotenvx would set them. It ignores Env. Like
+// Read, it sets every value it could read even if some files fail.
 func (o Options) Load(files ...string) error {
-	values, err := o.Read(files...)
+	o.Env = nil
+	_, settings, err := o.read(files, o.environment())
 	errs := []error{err}
-	for _, k := range slices.Sorted(maps.Keys(values)) {
-		if err := os.Setenv(k, values[k]); err != nil {
-			errs = append(errs, fmt.Errorf("dotenvx: set %s: %w", k, err))
+	failed := map[string]bool{}
+	for _, s := range settings {
+		if err := os.Setenv(s.key, s.value); err != nil && !failed[s.key] {
+			failed[s.key] = true
+			errs = append(errs, fmt.Errorf("dotenvx: set %s: %w", s.key, err))
 		}
 	}
 	return errors.Join(errs...)
@@ -77,7 +115,8 @@ func Overload(files ...string) error {
 
 // decode turns dotenv source into text. Like dotenvx, it decodes source that
 // starts with a UTF-16LE byte order mark from UTF-16LE, dropping a trailing
-// odd byte, and takes anything else as UTF-8.
+// odd byte, and takes anything else as UTF-8. Unpaired surrogates, which
+// dotenvx keeps in its JavaScript strings, become U+FFFD.
 func decode(src []byte) string {
 	if len(src) < 2 || src[0] != 0xff || src[1] != 0xfe {
 		return string(src)

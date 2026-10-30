@@ -43,6 +43,10 @@ Regenerate them with `node generate.js path/to/node_modules/@dotenvx/primitives`
 It refuses any other version of the package, and any fixture that Node
 reports errors for.
 
+## load
+
+`.env` and `.env.local`, written for the examples, which load them.
+
 ## encrypted, multiple
 
 Encrypted fixtures, with their private keys committed on purpose, from the
