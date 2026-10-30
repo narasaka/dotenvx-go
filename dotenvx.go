@@ -20,18 +20,40 @@ type Options struct {
 	// Overload lets values from the source replace values that already
 	// exist in Env.
 	Overload bool
+
+	// DisableCommandSubstitution turns off $(command) substitution. By
+	// default, as in dotenvx, each $(command) in a value that isn't
+	// single-quoted is replaced with the output of running the command with
+	// /bin/sh. That includes the existing value of a key the source
+	// assigns, unless Overload is set. The command sees Env plus the values
+	// parsed before it. When a command fails, writes more than 1 MiB to
+	// stdout and stderr together, or can't run because there is no /bin/sh
+	// (as on Windows or in minimal container images), the value is kept as
+	// it is. What a command writes to stderr is written to os.Stderr after
+	// it finishes, as dotenvx does.
+	DisableCommandSubstitution bool
 }
 
 // Parse reads dotenv source from r and returns its values. It doesn't modify
 // the process environment. When a key is assigned more than once, the last
 // assignment wins.
 //
-// Values that aren't single-quoted have their $NAME and ${NAME} references
-// expanded, as do ${NAME:-default}, ${NAME-default}, ${NAME:+alternative}
-// and ${NAME+alternative}, the way dotenvx expands them. Names resolve to
+// Values that aren't single-quoted first have each $(command) replaced
+// with the command's output, unless DisableCommandSubstitution is set.
+// Each output is inserted as it is, where the command was. dotenvx instead
+// treats it as a String.prototype.replace pattern ($$, $&, $` and $') and
+// replaces the first copy of the command's text, which may be in an
+// earlier command's output; it also turns invalid UTF-8 into U+FFFD, and
+// runs commands with cmd.exe on Windows rather than /bin/sh.
+//
+// Values that aren't single-quoted, and had no command substituted, then
+// have their $NAME and ${NAME} references expanded, as do
+// ${NAME:-default}, ${NAME-default}, ${NAME:+alternative} and
+// ${NAME+alternative}, the way dotenvx expands them. Names resolve to
 // existing values first, then to values parsed earlier, or the other way
 // round with Overload. A backslash keeps a "$" from starting a reference.
-// Existing values that aren't empty are used as they are, unexpanded.
+// Existing values that aren't empty aren't expanded, though they do go
+// through command substitution.
 //
 // Expansion differs from dotenvx where dotenvx relies on accidents of
 // JavaScript: a value is inserted as it is, even if it contains "$$" or
@@ -81,8 +103,17 @@ func (o Options) Parse(r io.Reader) (map[string]string, error) {
 		if v, ok := existing[a.key]; ok && !o.Overload {
 			value = v
 		}
+		// Like dotenvx, evaluate a value from the environment only if the
+		// source didn't replace it.
+		evaluated := false
+		if v, ok := existing[a.key]; a.quote != '\'' && !o.DisableCommandSubstitution &&
+			strings.Contains(value, "$(") && (!ok || v == value) {
+			next := evaluate(value, commandEnv(existing, parsed))
+			evaluated = next != value
+			value = next
+		}
 		// Existing values are taken as they are, unless they are empty.
-		if a.quote != '\'' && (existing[a.key] == "" || o.Overload) {
+		if a.quote != '\'' && !evaluated && (existing[a.key] == "" || o.Overload) {
 			expanded, err := expand(value, lookup, literals)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("dotenvx: expanding %s: %w", a.key, err))
