@@ -29,7 +29,8 @@ type Options struct {
 	// parsed before it. When a command fails, writes more than 1 MiB to
 	// stdout and stderr together, or can't run because there is no /bin/sh
 	// (as on Windows or in minimal container images), the value is kept as
-	// it is.
+	// it is. What a command writes to stderr is written to os.Stderr after
+	// it finishes, as dotenvx does.
 	DisableCommandSubstitution bool
 }
 
