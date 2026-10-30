@@ -70,3 +70,42 @@ func ExampleOverload() {
 		log.Fatal(err)
 	}
 }
+
+func ExampleDecrypt() {
+	// The private key and an encrypted value from testdata/encrypted.
+	const privateKey = "ec9e80073d7ace817d35acb8b7293cbf8e5981b4d2f5708ee5be405122993cd1"
+	value, err := dotenvx.Decrypt(privateKey, "encrypted:BG8M6U+GKJGwpGA42ml2erb9+T2NBX6Z2JkBLynDy21poz0UfF5aPxCgRbIyhnQFdWKd0C9GZ7lM5PeL86xghoMcWvvPpkyQ0yaD2pZ64RzoxFGB1lTZYlEgQOxTDJnWxODHfuQcFY10uA==")
+	fmt.Println(value, err)
+
+	other, _ := dotenvx.GenerateKeypair()
+	_, err = dotenvx.Decrypt(other, "encrypted:BG8M6U+GKJGwpGA42ml2erb9+T2NBX6Z2JkBLynDy21poz0UfF5aPxCgRbIyhnQFdWKd0C9GZ7lM5PeL86xghoMcWvvPpkyQ0yaD2pZ64RzoxFGB1lTZYlEgQOxTDJnWxODHfuQcFY10uA==")
+	fmt.Println(errors.Is(err, dotenvx.ErrWrongPrivateKey), err)
+	// Output:
+	// encrypted <nil>
+	// true [WRONG_PRIVATE_KEY] could not decrypt using private key
+}
+
+func ExampleEncrypt() {
+	privateKey, publicKey := dotenvx.GenerateKeypair()
+	encrypted, err := dotenvx.Encrypt(publicKey, "World")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	value, _ := dotenvx.Decrypt(privateKey, encrypted)
+	fmt.Println(value)
+	// Output: World
+}
+
+func ExamplePublicKey() {
+	publicKey, err := dotenvx.PublicKey("ec9e80073d7ace817d35acb8b7293cbf8e5981b4d2f5708ee5be405122993cd1")
+	fmt.Println(publicKey, err)
+	// Output: 03eaf2142ab3d55bdf108962334e06696db798e7412cfc51d75e74b4f87f299bba <nil>
+}
+
+func ExampleGenerateKeypair() {
+	privateKey, publicKey := dotenvx.GenerateKeypair()
+	// 32 bytes, and a compressed point of 33, in hex.
+	fmt.Println(len(privateKey), len(publicKey))
+	// Output: 64 66
+}

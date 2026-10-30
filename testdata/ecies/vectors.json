@@ -1,0 +1,30 @@
+{
+  "privateKey": "ec9e80073d7ace817d35acb8b7293cbf8e5981b4d2f5708ee5be405122993cd1",
+  "publicKey": "03eaf2142ab3d55bdf108962334e06696db798e7412cfc51d75e74b4f87f299bba",
+  "vectors": [
+    {
+      "plaintext": "",
+      "encrypted": "encrypted:BEGwi1fM7/AXrY7PT7PhG2aWwUOudfVfbv7KaFrxvCBK52sYh5DFc4BfoD5JyRmvpQxp9Rz+sN5vVHdfgcfiEECLz9ZhE1sJkusaE7nNxmNAlU8oXpMkMCe5YPfyztPMrg=="
+    },
+    {
+      "plaintext": "a",
+      "encrypted": "encrypted:BNGG+zNFLP6XVqWbcjyEodWSLawWV8HmIKJ4fFK0ahkQ1XFUGe9/9AgfaihXgshp2h3KmkgAG4D1H/HtWhLY+O/CxA9ZTATnJQBudETADFgjsh0ZpOyLP4oMDHFZzicHF40="
+    },
+    {
+      "plaintext": "hello world",
+      "encrypted": "encrypted:BKDJ6+bfz2W0/85Luu2xsxa2pPDGtBiHzrccum6E+m0ZOLpMJDwx/zc/Bc5Ik8JB97w8qofehmewR4SS6D/d/naGw9pxmWx+RgdhuKU9LtxwQl0a0ZcPYrwH7/ecB2N4XJ8/lg4+E6wtoEgu"
+    },
+    {
+      "plaintext": "héllo wörld ✓ 𝄞",
+      "encrypted": "encrypted:BNQH4XxfTv9GwtRCr4ZWPBdN4huAkggMjq26H3L6zsctuN3d0Z2bJ6riM3MMyKVemES7/dtY5KWOF7Jk5zNedYFY0Z+9HxLmZqYfqPkIM5UOpvKjSVrVP1J3nxo3ekjSNd+BnpHUia67PNPD5Z+1R15MNTn9OnQ="
+    },
+    {
+      "plaintext": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "encrypted": "encrypted:BA+360IH05POEamXamW/+31hgBsc4LLhvxzVDjn1f5yvFdbTQtmV3own1V022mADTYLoqq3bTYmJcYMW3Hwzcte7vtcS/dAEnm8qPIvpUQvrNpEWvmEYYo6SRslawqtWAe7cGvZ9e6n5jcwrh+kqtms8kbEZz8oPNs6EV/IebC1b7NP9cFWrSqXJkPf9+SRo5Fjy9W0t5ofFEegMSyImWus/vfZEVQhqsy2zNBGmYg/jpHWlgVIyMfFXSwZlf5MDftERlWFzPhmDtgR6CmbzpciCqVtE8UZzxSGsxzemS4ZSWCNAcXaAYe6sLLao1KJojqPL27XG/woBOb5WZsvrwja0lY3D4G1rdh1H74XoGoI/7Mjilfw6PAfjEOKgJIIs9NWsRdcgbh5gVvs61kWhb14QiUrEa7S1O5+Iw/ARkz88lpJTJ4njkAps1MLLPF31MojDPZRcYzZcfkIKBRiTxDVmu9sY9oPe/nX79wwT0xAUL4FFA4vw09r/TBykXLQo9e2zsIRKNJa9VSg0PnuNIMw9nWAbIYgSF1yGRXg0n6iXGcpdhhAgXrlpvRN/NHC6xd7wLJQ2cdEBe7eaocQuktLFQGTXpDFfXj4sxwb3NUq+1+xthr3GXQwABRM40T1uGKQLsiMmmTplkf3Kb2TVXk8hIiIpZL1YgqOJn2ibBUXTfedaphTeET42roa38OFSeN586nWj4oBwAklysh19Xg35tZ0VWE7nbldFKs6VTZk+MB+M3ezaqUnRkAoIsjKSVf2mEeXQAQlbCt396FZHG+55X8+63vocKHupSiWix97Q48F6oONmmDnFe4ePOAb2LJSp81U3uFcsmRHmiOkuJ6J3drvlNQbixbWXaHaZQdqHDdx7r1A3uaztEe6AkgFRHRbKGpjdFVUmjgRy1+HMgn2XcmbreYAhN6p5q8B1w6fOwlE8SfxD1uLX3m0kpxv9rPAUpYl6Wl0Z96/Q6TAW6FgmS0cByvPME1jMuTR8B14YYjQPo+Tz4w81qDmbpamyolwYqzHNWy1bt4uHFviYrJGIWGVU61HOD/fHEHs8MY7nSOpOzoFDfkhWHt23y3QERop+bNxNwDTAPqI98sRRvX9RRKAWuBInOhFVTGp9Kt9JojPbdN1F1+yaXvKkQwG/oqAUciVJXtj45+GnXveDg+EWgOoDgevDLI7EoqnCz5+SBAx6ZctocntAY+qpSEIPNNA/jb+gUG0mNu5Ww7CdUT6qDvKYU8a4+kDRjXI7Yev8CzC4eqf/MB4L2hWOM6lrXS4n2pXA6WFaLcDXfAAZqRXXCbPVQ1B81mxCybJsZcfCKu8cM6mkAyhhU+U5lecqQdJcWnWn9Hu66YNBEr2oJSwQqEa45vjQrPa2jlhlchrGyWJel+pLSDW+Ui+ZWSBSMvuLo30N0bDQRjRbfXJ4Zzyy4/6EkRq0XFEFtz5tMBmM98359sAOwIk="
+    },
+    {
+      "plaintext": "line1\nline2",
+      "encrypted": "encrypted:BOEFoLjhTmIPFsOBFbRan/9lsjrsWJTvKeheR3A56pqXAs45piQaGnmXd8di8/fGdYF1IDO4z9zzftFw8EAuAIPnYux5QBIELf/slR7k2v/B9GBJpp/Z3Zh43AzwchlPjR6IBUH0bluK8LhV"
+    }
+  ]
+}
