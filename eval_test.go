@@ -104,6 +104,28 @@ func TestParseCommandOutputLimit(t *testing.T) {
 	}
 }
 
+// Node buffers what commands write to stderr, so failing to forward it
+// doesn't affect them. Here, writing to os.Stderr fails.
+func TestParseCommandStderrUnwritable(t *testing.T) {
+	readOnly, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readOnly.Close()
+	stderr := os.Stderr
+	os.Stderr = readOnly
+	defer func() { os.Stderr = stderr }()
+
+	tests := []parseCase{
+		// Far more than a pipe holds.
+		{name: "within the limit", src: "A=$(printf %0200000d 0 >&2; echo hi)", want: map[string]string{"A": "hi"}},
+		{name: "over the limit", src: "A=$(printf %01048577d 0 >&2)", want: map[string]string{"A": "$(printf %01048577d 0 >&2)"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
+	}
+}
+
 func TestParseDisableCommandSubstitution(t *testing.T) {
 	opts := Options{Env: []string{"B=b"}, DisableCommandSubstitution: true}
 	got, err := opts.Parse(strings.NewReader("A=$(echo hi)$B"))

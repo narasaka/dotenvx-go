@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // maxOutput is the most a command may write to stdout and stderr together.
@@ -94,7 +95,9 @@ type outputBudget struct {
 	readers [2]*os.File
 }
 
-// budgetWriter writes to w what fits in the budget.
+// budgetWriter writes to w what fits in the budget. It ignores w's errors:
+// like execSync, which buffers stderr, it keeps reading the command's
+// output even if forwarding it fails.
 type budgetWriter struct {
 	budget *outputBudget
 	w      io.Writer
@@ -106,14 +109,16 @@ func (b budgetWriter) Write(p []byte) (int, error) {
 	if b.budget.spent || len(p) > b.budget.left {
 		if !b.budget.spent {
 			b.budget.spent = true
-			b.budget.cmd.Process.Kill()
+			// SIGTERM, like execSync's default killSignal.
+			b.budget.cmd.Process.Signal(syscall.SIGTERM)
 			b.budget.readers[0].Close()
 			b.budget.readers[1].Close()
 		}
 		return 0, errOutputTooLong
 	}
 	b.budget.left -= len(p)
-	return b.w.Write(p)
+	b.w.Write(p)
+	return len(p), nil
 }
 
 var errOutputTooLong = errors.New("command output too long")
