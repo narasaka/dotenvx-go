@@ -248,7 +248,7 @@ func TestDecryptLeavesBaseTableUnbuilt(t *testing.T) {
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
 		src := "DOTENV_PUBLIC_KEY=" + testPublicKey + "\nHELLO=" + testEncrypted + "\n"
-		got, err := Options{Env: []string{"DOTENV_PRIVATE_KEY=" + testPrivateKey}}.Parse(strings.NewReader(src))
+		got, err := Options{Env: []string{"DOTENV_PRIVATE_KEY=" + testPrivateKey}, KeyFiles: []string{}}.Parse(strings.NewReader(src))
 		runtime.ReadMemStats(&after)
 		if err != nil || got["HELLO"] != "encrypted" {
 			t.Fatalf("Parse = %v, %v; want HELLO decrypted", got, err)
