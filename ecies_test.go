@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -232,5 +235,34 @@ func TestDecodeBase64(t *testing.T) {
 		if got := hex.EncodeToString(decodeBase64(s)); got != want {
 			t.Errorf("decodeBase64(%q) = %s, want %s", s, got, want)
 		}
+	}
+}
+
+// TestLoadingLeavesBaseTableUnbuilt checks that loading an encrypted value
+// doesn't make decred build its table for multiplying the base point, which
+// takes about 10 ms and keeps 2 MiB for as long as the process runs. It
+// loads in a fresh process, where nothing has built the table yet.
+func TestLoadingLeavesBaseTableUnbuilt(t *testing.T) {
+	const fresh = "DOTENVX_GO_FRESH_PROCESS"
+	if os.Getenv(fresh) != "" {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		src := "DOTENV_PUBLIC_KEY=" + testPublicKey + "\nHELLO=" + testEncrypted + "\n"
+		got, err := Options{Env: []string{"DOTENV_PRIVATE_KEY=" + testPrivateKey}, KeyFiles: []string{}}.Parse(strings.NewReader(src))
+		runtime.ReadMemStats(&after)
+		if err != nil || got["HELLO"] != "encrypted" {
+			t.Fatalf("Parse = %v, %v; want HELLO decrypted", got, err)
+		}
+		if n := after.TotalAlloc - before.TotalAlloc; n > 256<<10 {
+			t.Fatalf("loading allocated %d KiB; want under 256 KiB", n>>10)
+		}
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLoadingLeavesBaseTableUnbuilt$")
+	// Under the race detector, a process waits 1 s before exiting unless
+	// told otherwise.
+	cmd.Env = append(os.Environ(), fresh+"=1", "GORACE="+os.Getenv("GORACE")+" atexit_sleep_ms=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("in a fresh process: %v\n%s", err, out)
 	}
 }
